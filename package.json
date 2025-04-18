@@ -1,0 +1,129 @@
+{
+  "name": "pkg-version",
+  "displayName": "Package Version Checker",
+  "description": "Checks package versions in common manifest files (package.json, composer.json, requirements.txt, pubspec.yaml) for updates.",
+  "version": "0.0.1",
+  "publisher": "YourPublisherName",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:packageDependencies",
+    "workspaceContains:**/package.json",
+    "workspaceContains:**/composer.json",
+    "workspaceContains:**/requirements.txt",
+    "workspaceContains:**/pubspec.yaml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pkg-version.checkUpdates",
+        "title": "Check for Package Updates"
+      },
+      {
+        "command": "pkg-version.refreshDependencies",
+        "title": "Refresh Dependencies",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pkg-version.excludeFolder",
+        "title": "Exclude Folder from Package Checks"
+      },
+      {
+        "command": "pkg-version.manageExclusions",
+        "title": "Manage Folder Exclusions"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "pkg-version.refreshDependencies",
+          "when": "view == packageDependencies",
+          "group": "navigation"
+        },
+        {
+          "command": "pkg-version.manageExclusions",
+          "when": "view == packageDependencies",
+          "group": "navigation@1"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "pkg-version.excludeFolder",
+          "when": "explorerResourceIsFolder",
+          "group": "2_workspace"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "package-version-explorer",
+          "title": "Package Versions",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "package-version-explorer": [
+        {
+          "id": "packageDependencies",
+          "name": "Dependencies",
+          "contextualTitle": "Package Dependencies"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Package Version Checker",
+      "properties": {
+        "pkgVersion.excludeFolders": {
+          "type": "array",
+          "default": [
+            "**/node_modules/**",
+            "**/vendor/**",
+            "**/venv/**",
+            "**/.git/**",
+            "**/build/**",
+            "**/.dart_tool/**",
+            "**/dist/**",
+            "**/.next/**",
+            "**/.nuxt/**",
+            "**/bin/**",
+            "**/__pycache__/**"
+          ],
+          "description": "Glob patterns for folders to exclude when searching for package files."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint .",
+    "pretest": "npm run compile && npm run lint",
+    "test": "node ./test/runTest.js"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "axios": "^1.8.4",
+    "semver": "^7.7.1"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "20.x",
+    "@types/semver": "^7.7.0",
+    "@types/vscode": "^1.80.0",
+    "@vscode/test-electron": "^2.3.3",
+    "eslint": "^8.44.0",
+    "glob": "^10.3.3",
+    "mocha": "^10.2.0",
+    "typescript": "^5.1.6"
+  }
+}
