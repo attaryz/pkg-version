@@ -486,14 +486,21 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
                   vscode.TreeItemCollapsibleState.None,
                   undefined, // No resourceUri for individual deps
                   latestVersion,
-                  updateType
+                  updateType,
+                  "npm",
+                  packageJsonUri.fsPath
                 )
               } else {
                 // If fetch failed, create dependency without update info
                 return new Dependency(
                   moduleName,
                   currentVersion,
-                  vscode.TreeItemCollapsibleState.None
+                  vscode.TreeItemCollapsibleState.None,
+                  undefined,
+                  undefined,
+                  "none",
+                  "npm",
+                  packageJsonUri.fsPath
                 )
               }
             })()
@@ -571,13 +578,20 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
                   vscode.TreeItemCollapsibleState.None,
                   undefined,
                   latestVersion,
-                  updateType
+                  updateType,
+                  "composer",
+                  composerJsonUri.fsPath
                 )
               } else {
                 return new Dependency(
                   moduleName,
                   currentVersion,
-                  vscode.TreeItemCollapsibleState.None
+                  vscode.TreeItemCollapsibleState.None,
+                  undefined,
+                  undefined,
+                  "none",
+                  "composer",
+                  composerJsonUri.fsPath
                 )
               }
             })()
@@ -661,13 +675,20 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
                     vscode.TreeItemCollapsibleState.None,
                     undefined,
                     latestVersion,
-                    updateType
+                    updateType,
+                    "pypi",
+                    requirementsTxtUri.fsPath
                   )
                 } else {
                   return new Dependency(
                     name,
                     currentVersion,
-                    vscode.TreeItemCollapsibleState.None
+                    vscode.TreeItemCollapsibleState.None,
+                    undefined,
+                    undefined,
+                    "none",
+                    "pypi",
+                    requirementsTxtUri.fsPath
                   )
                 }
               })()
@@ -752,7 +773,12 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
                 new Dependency(
                   moduleName,
                   versionStr,
-                  vscode.TreeItemCollapsibleState.None
+                  vscode.TreeItemCollapsibleState.None,
+                  undefined,
+                  undefined,
+                  "none",
+                  undefined,
+                  pubspecYamlUri.fsPath
                 )
               )
             )
@@ -777,17 +803,24 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
                 const updateType = getUpdateType(currentVersion, latestVersion)
                 return new Dependency(
                   moduleName,
-                  currentVersion, // Show original specifier
+                  currentVersion,
                   vscode.TreeItemCollapsibleState.None,
                   undefined,
                   latestVersion,
-                  updateType
+                  updateType,
+                  "pubdev",
+                  pubspecYamlUri.fsPath
                 )
               } else {
                 return new Dependency(
                   moduleName,
                   currentVersion,
-                  vscode.TreeItemCollapsibleState.None
+                  vscode.TreeItemCollapsibleState.None,
+                  undefined,
+                  undefined,
+                  "none",
+                  "pubdev",
+                  pubspecYamlUri.fsPath
                 )
               }
             })()
@@ -822,6 +855,459 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
   }
 
   /**
+   * Updates a package to its latest version in the corresponding manifest file.
+   * Supports package.json, composer.json, requirements.txt, and pubspec.yaml.
+   * 
+   * @param dependency - The dependency to update
+   * @returns A promise that resolves when the update is complete
+   */
+  async updatePackage(dependency: Dependency): Promise<boolean> {
+    if (!dependency.packageManager || !dependency.latestVersion) {
+      vscode.window.showErrorMessage("Cannot update this package: missing package manager or latest version information");
+      return false;
+    }
+
+    try {
+      switch (dependency.packageManager) {
+        case "npm":
+          return await this.updateNpmPackage(dependency);
+        case "composer":
+          return await this.updateComposerPackage(dependency);
+        case "pypi":
+          return await this.updatePypiPackage(dependency);
+        case "pubdev":
+          return await this.updatePubDevPackage(dependency);
+        default:
+          vscode.window.showErrorMessage(`Updating packages for ${dependency.packageManager} is not supported yet.`);
+          return false;
+      }
+    } catch (error: any) {
+      vscode.window.showErrorMessage(`Failed to update package ${dependency.label}: ${error.message}`);
+      console.error("Package update failed:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Updates an npm package in package.json.
+   * 
+   * @param dependency - The npm dependency to update
+   * @returns True if the update was successful, false otherwise
+   */
+  private async updateNpmPackage(dependency: Dependency): Promise<boolean> {
+    if (!dependency.parentFile) {
+      // Find the package.json from workspace
+      const packageJsonFiles = await vscode.workspace.findFiles(
+        "**/package.json",
+        this.getExcludePattern()
+      );
+      
+      if (packageJsonFiles.length === 0) {
+        vscode.window.showErrorMessage("No package.json file found in the workspace");
+        return false;
+      }
+      
+      if (packageJsonFiles.length > 1) {
+        // If multiple package.json files, let user choose which one to update
+        const items = packageJsonFiles.map((file) => ({
+          label: vscode.workspace.asRelativePath(file),
+          file
+        }));
+        
+        const selection = await vscode.window.showQuickPick(items, {
+          placeHolder: "Select package.json file to update"
+        });
+        
+        if (!selection) {
+          return false;
+        }
+        
+        return await this.updatePackageJsonDependency(selection.file, dependency);
+      } else {
+        // Only one package.json, use it
+        return await this.updatePackageJsonDependency(packageJsonFiles[0], dependency);
+      }
+    } else {
+      // Use the parent file directly
+      return await this.updatePackageJsonDependency(vscode.Uri.file(dependency.parentFile), dependency);
+    }
+  }
+
+  /**
+   * Updates a dependency in a specific package.json file.
+   * 
+   * @param packageJsonUri - URI of the package.json file
+   * @param dependency - The dependency to update
+   * @returns True if the update was successful, false otherwise
+   */
+  private async updatePackageJsonDependency(
+    packageJsonUri: vscode.Uri,
+    dependency: Dependency
+  ): Promise<boolean> {
+    try {
+      const document = await vscode.workspace.openTextDocument(packageJsonUri);
+      const packageJson = JSON.parse(document.getText());
+      
+      let updated = false;
+      
+      // Update in dependencies, devDependencies, and optionalDependencies if present
+      const sections = ["dependencies", "devDependencies", "optionalDependencies"];
+      
+      for (const section of sections) {
+        if (packageJson[section] && packageJson[section][dependency.label]) {
+          const prefix = packageJson[section][dependency.label].match(/^[~^>=<]/)?.[0] || "";
+          packageJson[section][dependency.label] = `${prefix}${dependency.latestVersion}`;
+          updated = true;
+        }
+      }
+      
+      if (!updated) {
+        vscode.window.showWarningMessage(`Package ${dependency.label} not found in ${vscode.workspace.asRelativePath(packageJsonUri)}`);
+        return false;
+      }
+      
+      // Write the updated package.json back to disk
+      const edit = new vscode.WorkspaceEdit();
+      const entireRange = new vscode.Range(
+        document.positionAt(0),
+        document.positionAt(document.getText().length)
+      );
+      
+      edit.replace(
+        packageJsonUri,
+        entireRange,
+        JSON.stringify(packageJson, null, 2)
+      );
+      
+      const success = await vscode.workspace.applyEdit(edit);
+      
+      if (success) {
+        vscode.window.showInformationMessage(
+          `Updated ${dependency.label} to ${dependency.latestVersion}`
+        );
+        this.refresh(); // Refresh the view
+        return true;
+      } else {
+        vscode.window.showErrorMessage(`Failed to update ${dependency.label}`);
+        return false;
+      }
+    } catch (error: any) {
+      console.error("Error updating package.json:", error);
+      vscode.window.showErrorMessage(`Error updating package.json: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Updates a Composer package in composer.json.
+   * 
+   * @param dependency - The Composer dependency to update
+   * @returns True if the update was successful, false otherwise
+   */
+  private async updateComposerPackage(dependency: Dependency): Promise<boolean> {
+    // Similar to npm update, find composer.json and update it
+    const composerJsonFiles = await vscode.workspace.findFiles(
+      "**/composer.json",
+      this.getExcludePattern()
+    );
+    
+    if (composerJsonFiles.length === 0) {
+      vscode.window.showErrorMessage("No composer.json file found in the workspace");
+      return false;
+    }
+    
+    let targetFile: vscode.Uri;
+    
+    if (composerJsonFiles.length > 1) {
+      // If multiple composer.json files, let user choose which one to update
+      const items = composerJsonFiles.map((file) => ({
+        label: vscode.workspace.asRelativePath(file),
+        file
+      }));
+      
+      const selection = await vscode.window.showQuickPick(items, {
+        placeHolder: "Select composer.json file to update"
+      });
+      
+      if (!selection) {
+        return false;
+      }
+      
+      targetFile = selection.file;
+    } else {
+      // Only one composer.json, use it
+      targetFile = composerJsonFiles[0];
+    }
+    
+    try {
+      const document = await vscode.workspace.openTextDocument(targetFile);
+      const composerJson = JSON.parse(document.getText());
+      
+      let updated = false;
+      
+      // Update in require and require-dev sections if present
+      const sections = ["require", "require-dev"];
+      
+      for (const section of sections) {
+        if (composerJson[section] && composerJson[section][dependency.label]) {
+          // Preserve version constraints (^, ~, etc.)
+          const currentVersion = composerJson[section][dependency.label];
+          const prefix = currentVersion.match(/^[~^>=<]/)?.[0] || "";
+          composerJson[section][dependency.label] = `${prefix}${dependency.latestVersion}`;
+          updated = true;
+        }
+      }
+      
+      if (!updated) {
+        vscode.window.showWarningMessage(`Package ${dependency.label} not found in ${vscode.workspace.asRelativePath(targetFile)}`);
+        return false;
+      }
+      
+      // Write the updated composer.json back to disk
+      const edit = new vscode.WorkspaceEdit();
+      const entireRange = new vscode.Range(
+        document.positionAt(0),
+        document.positionAt(document.getText().length)
+      );
+      
+      edit.replace(
+        targetFile,
+        entireRange,
+        JSON.stringify(composerJson, null, 2)
+      );
+      
+      const success = await vscode.workspace.applyEdit(edit);
+      
+      if (success) {
+        vscode.window.showInformationMessage(
+          `Updated ${dependency.label} to ${dependency.latestVersion}`
+        );
+        this.refresh(); // Refresh the view
+        return true;
+      } else {
+        vscode.window.showErrorMessage(`Failed to update ${dependency.label}`);
+        return false;
+      }
+    } catch (error: any) {
+      console.error("Error updating composer.json:", error);
+      vscode.window.showErrorMessage(`Error updating composer.json: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Updates a Python package in requirements.txt.
+   * 
+   * @param dependency - The Python dependency to update
+   * @returns True if the update was successful, false otherwise
+   */
+  private async updatePypiPackage(dependency: Dependency): Promise<boolean> {
+    const requirementsFiles = await vscode.workspace.findFiles(
+      "**/requirements.txt",
+      this.getExcludePattern()
+    );
+    
+    if (requirementsFiles.length === 0) {
+      vscode.window.showErrorMessage("No requirements.txt file found in the workspace");
+      return false;
+    }
+    
+    let targetFile: vscode.Uri;
+    
+    if (requirementsFiles.length > 1) {
+      // If multiple requirements.txt files, let user choose which one to update
+      const items = requirementsFiles.map((file) => ({
+        label: vscode.workspace.asRelativePath(file),
+        file
+      }));
+      
+      const selection = await vscode.window.showQuickPick(items, {
+        placeHolder: "Select requirements.txt file to update"
+      });
+      
+      if (!selection) {
+        return false;
+      }
+      
+      targetFile = selection.file;
+    } else {
+      // Only one requirements.txt, use it
+      targetFile = requirementsFiles[0];
+    }
+    
+    try {
+      const document = await vscode.workspace.openTextDocument(targetFile);
+      const textContent = document.getText();
+      const lines = textContent.split(/\r?\n/);
+      let updated = false;
+      
+      // Regex to match package specifications with versions
+      const packageRegex = new RegExp(
+        `^\\s*(${dependency.label})\\s*([<>=!~^].*)?$`,
+        "i"
+      );
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const match = packageRegex.exec(line);
+        
+        if (match) {
+          // Keep any comparison operators (==, >=, etc.)
+          const operator = line.includes("==") ? "==" : 
+                          line.includes(">=") ? ">=" : 
+                          line.includes(">") ? ">" : 
+                          line.includes("<=") ? "<=" : 
+                          line.includes("<") ? "<" : 
+                          line.includes("~=") ? "~=" : "==";
+          
+          lines[i] = `${dependency.label}${operator}${dependency.latestVersion}`;
+          updated = true;
+          break;
+        }
+      }
+      
+      if (!updated) {
+        vscode.window.showWarningMessage(`Package ${dependency.label} not found in ${vscode.workspace.asRelativePath(targetFile)}`);
+        return false;
+      }
+      
+      // Write the updated requirements.txt back to disk
+      const edit = new vscode.WorkspaceEdit();
+      const entireRange = new vscode.Range(
+        document.positionAt(0),
+        document.positionAt(document.getText().length)
+      );
+      
+      edit.replace(targetFile, entireRange, lines.join("\n"));
+      
+      const success = await vscode.workspace.applyEdit(edit);
+      
+      if (success) {
+        vscode.window.showInformationMessage(
+          `Updated ${dependency.label} to ${dependency.latestVersion}`
+        );
+        this.refresh(); // Refresh the view
+        return true;
+      } else {
+        vscode.window.showErrorMessage(`Failed to update ${dependency.label}`);
+        return false;
+      }
+    } catch (error: any) {
+      console.error("Error updating requirements.txt:", error);
+      vscode.window.showErrorMessage(`Error updating requirements.txt: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Updates a Dart/Flutter package in pubspec.yaml.
+   * 
+   * @param dependency - The Dart/Flutter dependency to update
+   * @returns True if the update was successful, false otherwise
+   */
+  private async updatePubDevPackage(dependency: Dependency): Promise<boolean> {
+    const pubspecFiles = await vscode.workspace.findFiles(
+      "**/pubspec.yaml",
+      this.getExcludePattern()
+    );
+    
+    if (pubspecFiles.length === 0) {
+      vscode.window.showErrorMessage("No pubspec.yaml file found in the workspace");
+      return false;
+    }
+    
+    let targetFile: vscode.Uri;
+    
+    if (pubspecFiles.length > 1) {
+      // If multiple pubspec.yaml files, let user choose which one to update
+      const items = pubspecFiles.map((file) => ({
+        label: vscode.workspace.asRelativePath(file),
+        file
+      }));
+      
+      const selection = await vscode.window.showQuickPick(items, {
+        placeHolder: "Select pubspec.yaml file to update"
+      });
+      
+      if (!selection) {
+        return false;
+      }
+      
+      targetFile = selection.file;
+    } else {
+      // Only one pubspec.yaml, use it
+      targetFile = pubspecFiles[0];
+    }
+    
+    try {
+      const document = await vscode.workspace.openTextDocument(targetFile);
+      const textContent = document.getText();
+      
+      // Parse YAML content
+      const pubspecYaml: any = yaml.load(textContent);
+      let updated = false;
+      
+      // Update in dependencies and dev_dependencies sections if present
+      const sections = ["dependencies", "dev_dependencies", "dependency_overrides"];
+      
+      for (const section of sections) {
+        if (pubspecYaml[section] && pubspecYaml[section][dependency.label]) {
+          const currentValue = pubspecYaml[section][dependency.label];
+          
+          // Handle different formats of dependencies in pubspec.yaml
+          if (typeof currentValue === "string") {
+            // Simple version string like "^1.0.0"
+            const prefix = currentValue.match(/^[~^>=<]/)?.[0] || "";
+            pubspecYaml[section][dependency.label] = `${prefix}${dependency.latestVersion}`;
+            updated = true;
+          } else if (typeof currentValue === "object") {
+            // Complex dependency spec (hosted, git, path, etc.)
+            if (currentValue.version) {
+              const prefix = currentValue.version.match(/^[~^>=<]/)?.[0] || "";
+              pubspecYaml[section][dependency.label].version = `${prefix}${dependency.latestVersion}`;
+              updated = true;
+            }
+          }
+        }
+      }
+      
+      if (!updated) {
+        vscode.window.showWarningMessage(`Package ${dependency.label} not found in ${vscode.workspace.asRelativePath(targetFile)}`);
+        return false;
+      }
+      
+      // Convert back to YAML
+      const updatedYaml = yaml.dump(pubspecYaml, { lineWidth: -1 });
+      
+      // Write the updated pubspec.yaml back to disk
+      const edit = new vscode.WorkspaceEdit();
+      const entireRange = new vscode.Range(
+        document.positionAt(0),
+        document.positionAt(document.getText().length)
+      );
+      
+      edit.replace(targetFile, entireRange, updatedYaml);
+      
+      const success = await vscode.workspace.applyEdit(edit);
+      
+      if (success) {
+        vscode.window.showInformationMessage(
+          `Updated ${dependency.label} to ${dependency.latestVersion}`
+        );
+        this.refresh(); // Refresh the view
+        return true;
+      } else {
+        vscode.window.showErrorMessage(`Failed to update ${dependency.label}`);
+        return false;
+      }
+    } catch (error: any) {
+      console.error("Error updating pubspec.yaml:", error);
+      vscode.window.showErrorMessage(`Error updating pubspec.yaml: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
    * Utility function to check if a file path exists.
    * 
    * @param p - The file path to check
@@ -834,6 +1320,97 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
       return false
     }
     return true
+  }
+
+  /**
+   * Gets all outdated dependencies across all manifest files.
+   * 
+   * @returns A promise that resolves to an array of outdated Dependency objects
+   */
+  async getAllOutdatedDependencies(): Promise<Dependency[]> {
+    const outdatedDependencies: Dependency[] = [];
+    
+    try {
+      // Scan all supported package files
+      const packageJsonFiles = await vscode.workspace.findFiles(
+        "**/package.json",
+        this.getExcludePattern()
+      );
+      
+      const composerJsonFiles = await vscode.workspace.findFiles(
+        "**/composer.json",
+        this.getExcludePattern()
+      );
+      
+      const requirementsTxtFiles = await vscode.workspace.findFiles(
+        "**/requirements.txt",
+        this.getExcludePattern()
+      );
+      
+      const pubspecYamlFiles = await vscode.workspace.findFiles(
+        "**/pubspec.yaml",
+        this.getExcludePattern()
+      );
+      
+      // Process each file type
+      for (const packageJsonUri of packageJsonFiles) {
+        if (this.isFileExcluded(packageJsonUri.fsPath)) {
+          continue;
+        }
+        const deps = await this.getDepsInPackageJson(packageJsonUri);
+        // Filter for only outdated dependencies
+        const outdated = deps.filter(dep => 
+          dep.updateType && 
+          dep.updateType !== "none" && 
+          dep.latestVersion
+        );
+        outdatedDependencies.push(...outdated);
+      }
+      
+      for (const composerJsonUri of composerJsonFiles) {
+        if (this.isFileExcluded(composerJsonUri.fsPath)) {
+          continue;
+        }
+        const deps = await this.getDepsInComposerJson(composerJsonUri);
+        const outdated = deps.filter(dep => 
+          dep.updateType && 
+          dep.updateType !== "none" && 
+          dep.latestVersion
+        );
+        outdatedDependencies.push(...outdated);
+      }
+      
+      for (const requirementsTxtUri of requirementsTxtFiles) {
+        if (this.isFileExcluded(requirementsTxtUri.fsPath)) {
+          continue;
+        }
+        const deps = await this.getDepsInRequirementsTxt(requirementsTxtUri);
+        const outdated = deps.filter(dep => 
+          dep.updateType && 
+          dep.updateType !== "none" && 
+          dep.latestVersion
+        );
+        outdatedDependencies.push(...outdated);
+      }
+      
+      for (const pubspecYamlUri of pubspecYamlFiles) {
+        if (this.isFileExcluded(pubspecYamlUri.fsPath)) {
+          continue;
+        }
+        const deps = await this.getDepsInPubspecYaml(pubspecYamlUri);
+        const outdated = deps.filter(dep => 
+          dep.updateType && 
+          dep.updateType !== "none" && 
+          dep.latestVersion
+        );
+        outdatedDependencies.push(...outdated);
+      }
+    } catch (error: any) {
+      console.error("Error getting outdated dependencies:", error);
+      vscode.window.showErrorMessage(`Error scanning for outdated dependencies: ${error.message}`);
+    }
+    
+    return outdatedDependencies;
   }
 }
 
@@ -856,6 +1433,8 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
 class Dependency extends vscode.TreeItem {
   public latestVersion?: string // Store the latest fetched version
   public updateType?: "major" | "minor" | "patch" | "prerelease" | "none" // Store the type of update
+  public packageManager?: string // Store the package manager type
+  public parentFile?: string // Store the parent file path
 
   /**
    * Creates a new Dependency tree item.
@@ -866,6 +1445,8 @@ class Dependency extends vscode.TreeItem {
    * @param resourceUri - For package files, the URI to the file
    * @param latestVersion - Optional latest available version
    * @param updateType - Optional update type classification
+   * @param packageManager - Optional package manager type
+   * @param parentFile - Optional parent file path
    */
   constructor(
     public readonly label: string, // Filename or package name
@@ -873,73 +1454,67 @@ class Dependency extends vscode.TreeItem {
     public readonly collapsibleState: vscode.TreeItemCollapsibleState,
     public readonly resourceUri?: vscode.Uri, // Store Uri for files
     latestVersion?: string, // Add latestVersion parameter
-    updateType?: "major" | "minor" | "patch" | "prerelease" | "none" // Add updateType parameter
+    updateType?: "major" | "minor" | "patch" | "prerelease" | "none", // Add updateType parameter
+    packageManager?: string, // Add package manager parameter
+    parentFile?: string // Add parent file path parameter
   ) {
     super(label, collapsibleState)
     this.latestVersion = latestVersion
     this.updateType = updateType
+    this.packageManager = packageManager
+    this.parentFile = parentFile
 
-    // Update tooltip and description based on update status
-    if (this.updateType && this.updateType !== "none" && this.latestVersion) {
-      this.description = `${this.version} -> ${this.latestVersion} (${this.updateType})`
-      this.tooltip = `${this.label}: ${this.version} (latest: ${this.latestVersion} - ${this.updateType} update available)`
-      // Add icon logic here later based on updateType
-    } else if (this.version) {
-      this.tooltip = `${this.label}: ${this.version}`
-      this.description = this.version
+    // Update tooltip and description to show both current and latest version
+    if (latestVersion && updateType && updateType !== "none") {
+      this.tooltip = `${this.label}: ${version} → ${latestVersion} (${updateType} update)`
+      this.description = `${version} → ${latestVersion}`
     } else {
-      this.tooltip = this.label
-      this.description = "" // No version for file items
+      this.tooltip = `${this.label}${version ? `: ${version}` : ""}`
+      this.description = version
+    }
+    
+    // Set contextValue based on whether this is a package with an update available
+    if (updateType && updateType !== "none" && latestVersion) {
+      this.contextValue = "dependency"
+    }
+    
+    // Set icon based on updateType using ThemeIcon
+    if (this.updateType && this.updateType !== "none") {
+      // Different colors for different update types
+      if (this.updateType === "major") {
+        this.iconPath = new vscode.ThemeIcon(
+          "circle-filled",
+          new vscode.ThemeColor("errorForeground")
+        ) // Red for major updates
+      } else if (this.updateType === "minor") {
+        this.iconPath = new vscode.ThemeIcon(
+          "circle-filled",
+          new vscode.ThemeColor("editorWarning.foreground")
+        ) // Yellow/orange for minor updates
+      } else if (this.updateType === "patch") {
+        this.iconPath = new vscode.ThemeIcon(
+          "circle-filled",
+          new vscode.ThemeColor("editorInfo.foreground")
+        ) // Blue for patch updates
+      } else {
+        this.iconPath = new vscode.ThemeIcon(
+          "circle-filled",
+          new vscode.ThemeColor("focusBorder")
+        ) // Gray for prereleases
+      }
+    } else {
+      this.iconPath = new vscode.ThemeIcon(
+        "pass-filled",
+        new vscode.ThemeColor("charts.green")
+      ) // Green check mark for up-to-date packages
     }
 
-    // Set context value for files to enable potential commands like 'open file'
+    // Set command for opening the file
     if (this.resourceUri) {
-      this.contextValue = "packageFile"
       this.command = {
         command: "vscode.open",
         title: "Open File",
         arguments: [this.resourceUri],
-      }
-    } else {
-      // It's a dependency item
-      this.contextValue = "dependency"
-      // Set icon based on updateType using ThemeIcon
-      if (this.updateType && this.updateType !== "none") {
-        switch (this.updateType) {
-          case "major":
-            this.iconPath = new vscode.ThemeIcon(
-              "arrow-circle-up",
-              new vscode.ThemeColor("charts.red")
-            ) // Red for major
-            break
-          case "minor":
-            this.iconPath = new vscode.ThemeIcon(
-              "arrow-up",
-              new vscode.ThemeColor("charts.orange")
-            ) // Orange for minor
-            break
-          case "patch":
-            this.iconPath = new vscode.ThemeIcon(
-              "chevron-up",
-              new vscode.ThemeColor("charts.yellow")
-            ) // Yellow for patch
-            break
-          case "prerelease":
-            this.iconPath = new vscode.ThemeIcon(
-              "beaker",
-              new vscode.ThemeColor("charts.blue")
-            ) // Blue for prerelease
-            break
-          default:
-            // Optional: default icon for 'none' or leave undefined
-            break
-        }
-      } else if (!this.resourceUri) {
-        // Add icon for up-to-date dependencies
-        this.iconPath = new vscode.ThemeIcon(
-          "check",
-          new vscode.ThemeColor("charts.green")
-        ) // Green check mark for up-to-date packages
       }
     }
   }

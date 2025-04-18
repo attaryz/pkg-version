@@ -9,6 +9,8 @@ A VS Code extension that helps you keep track of package dependencies across mul
 
 - **Multi-Package Manager Support**: Works with npm (package.json), Composer (composer.json), Python (requirements.txt), and Dart/Flutter (pubspec.yaml)
 - **Update Status Indicators**: Visual indicators show the type of update available (major, minor, patch)
+- **One-Click Updates**: Update packages directly from the dependencies view
+- **Bulk Update**: Update all outdated packages with a single click
 - **Tree View**: Organized view of all package files and their dependencies
 - **Exclusion System**: Ability to exclude folders from scanning to improve performance
 
@@ -27,12 +29,28 @@ A VS Code extension that helps you keep track of package dependencies across mul
    - 🟡 Patch updates (bug fixes)
    - 🔵 Prerelease versions
 
+### Updating Packages
+
+The extension provides several ways to update packages:
+
+1. **Update a Single Package**:
+   - Hover over a dependency with an available update
+   - Click the "Update Package" button that appears
+   - The package will be updated to the latest version while preserving version constraints (^, ~, etc.)
+
+2. **Update All Packages**:
+   - Click the update all icon in the Package Dependencies view header
+   - Confirm that you want to update all outdated packages
+   - The extension will update all outdated packages and show a progress notification
+
 ### Commands
 
 The extension provides several commands that can be accessed via the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`):
 
 - **Check Package Updates**: Manually trigger a check for outdated dependencies
 - **Refresh Dependencies**: Refresh the dependencies tree view
+- **Update Package**: Update a selected package to the latest version
+- **Update All Packages**: Update all outdated packages at once
 - **Exclude Folder**: Exclude a folder from dependency scanning
 - **Manage Exclusions**: View and remove folder exclusions
 
@@ -64,10 +82,22 @@ This extension contributes the following settings:
 | Python | requirements.txt | PyPI |
 | Dart/Flutter | pubspec.yaml | pub.dev |
 
+## Features in Detail
+
+### Version Preservation
+
+When updating packages, the extension preserves the original version constraints:
+- `^1.0.0` → `^2.0.0` (preserves caret)
+- `~1.0.0` → `~1.2.0` (preserves tilde)
+- `>=1.0.0` → `>=1.2.0` (preserves greater than or equal)
+
+### Multi-File Support
+
+If your workspace contains multiple package files of the same type, the extension will ask you which file to update when using the update functionality.
+
 ## Planned Features
 
 - Support for additional package managers (Cargo, Go modules, etc.)
-- Batch update mechanism for dependencies
 - Improved handling of complex version constraints
 - Caching to reduce API calls
 - Offline mode

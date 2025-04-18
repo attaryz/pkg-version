@@ -86,6 +86,94 @@ function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(disposable);
   
+  // Register update package command
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.updatePackage",
+    async (dependency) => {
+      // If dependency is not provided, it means the command was not triggered from a tree item
+      if (!dependency) {
+        vscode.window.showErrorMessage("Please select a package to update from the dependencies view");
+        return;
+      }
+      
+      await dependencyProvider.updatePackage(dependency);
+    }
+  );
+  context.subscriptions.push(disposable);
+  
+  // Register update all packages command
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.updateAllPackages",
+    async () => {
+      // Show a confirmation dialog to ensure the user wants to update all packages
+      const choice = await vscode.window.showQuickPick(
+        ["Yes, update all packages", "No, cancel"],
+        {
+          placeHolder: "This will update all outdated packages. Are you sure you want to continue?",
+          canPickMany: false
+        }
+      );
+      
+      if (choice !== "Yes, update all packages") {
+        return;
+      }
+
+      // Get all outdated dependencies from the provider
+      const allDependencies = await dependencyProvider.getAllOutdatedDependencies();
+      
+      if (allDependencies.length === 0) {
+        vscode.window.showInformationMessage("No outdated packages found.");
+        return;
+      }
+      
+      // Show progress indicator
+      vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Updating packages",
+          cancellable: true
+        },
+        async (progress, token) => {
+          let successCount = 0;
+          let failCount = 0;
+          
+          // Calculate increment step for progress bar
+          const incrementStep = 100 / allDependencies.length;
+          
+          for (let i = 0; i < allDependencies.length; i++) {
+            if (token.isCancellationRequested) {
+              vscode.window.showInformationMessage("Package update operation cancelled.");
+              break;
+            }
+            
+            const dependency = allDependencies[i];
+            progress.report({ 
+              message: `Updating ${dependency.label} (${i + 1}/${allDependencies.length})`,
+              increment: incrementStep 
+            });
+            
+            const success = await dependencyProvider.updatePackage(dependency);
+            if (success) {
+              successCount++;
+            } else {
+              failCount++;
+            }
+          }
+          
+          if (successCount > 0 || failCount > 0) {
+            vscode.window.showInformationMessage(
+              `Update complete. ${successCount} package(s) updated successfully. ${failCount} package(s) failed.`
+            );
+          }
+          
+          // Refresh the view to show updated status
+          dependencyProvider.refresh();
+        }
+      );
+    }
+  );
+  context.subscriptions.push(disposable);
+  
   /**
    * Command to exclude a folder from dependency scanning.
    * Users can exclude folders that contain many package files but aren't relevant

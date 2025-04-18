@@ -36,6 +36,14 @@
       {
         "command": "pkg-version.manageExclusions",
         "title": "Manage Folder Exclusions"
+      },
+      {
+        "command": "pkg-version.updatePackage",
+        "title": "Update Package"
+      },
+      {
+        "command": "pkg-version.updateAllPackages",
+        "title": "Update All Packages"
       }
     ],
     "menus": {
@@ -49,6 +57,18 @@
           "command": "pkg-version.manageExclusions",
           "when": "view == packageDependencies",
           "group": "navigation@1"
+        },
+        {
+          "command": "pkg-version.updateAllPackages",
+          "when": "view == packageDependencies",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "pkg-version.updatePackage",
+          "when": "view == packageDependencies && viewItem == dependency",
+          "group": "inline"
         }
       ],
       "explorer/context": [
