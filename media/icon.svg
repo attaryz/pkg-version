@@ -1,1 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">📦</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Background Box -->
+  <rect x="14" y="14" width="100" height="100" rx="15" fill="#2c2c54" />
+  
+  <!-- Package Box -->
+  <rect x="32" y="32" width="64" height="44" rx="5" fill="#5d54a4" />
+  
+  <!-- Package Lid -->
+  <path d="M32 42 L64 54 L96 42 L96 32 L32 32 Z" fill="#706fd3" />
+  
+  <!-- Version Check Mark -->
+  <path d="M44 84 L56 96 L84 68" stroke="#33d9b2" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  
+  <!-- Up Arrow -->
+  <path d="M64 24 L72 32 L68 32 L68 40 L60 40 L60 32 L56 32 Z" fill="#ff793f" />
+</svg>

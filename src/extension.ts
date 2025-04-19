@@ -16,7 +16,7 @@ async function ensureDefaultExclusions() {
   // Basic default exclusions that should always be present
   const requiredExclusions = [
     "**/node_modules/**",
-    "**/vendor/**",
+    "**/vendor/**/vendor/**", // Only exclude nested vendor folders
     "**/venv/**",
     "**/.git/**"
   ];
@@ -30,10 +30,33 @@ async function ensureDefaultExclusions() {
     }
   }
   
+  // Check if we need to update the old vendor exclusion to the new pattern
+  const oldVendorExclusion = "**/vendor/**";
+  const indexOfOldVendor = currentExclusions.indexOf(oldVendorExclusion);
+  if (indexOfOldVendor !== -1) {
+    // Replace old vendor exclusion with new nested vendor exclusion
+    currentExclusions[indexOfOldVendor] = "**/vendor/**/vendor/**";
+    needsUpdate = true;
+  }
+  
   // Update the configuration if needed
   if (needsUpdate) {
     await config.update("excludeFolders", currentExclusions, vscode.ConfigurationTarget.Global);
-    console.log("Updated default exclusions to ensure node_modules and other critical folders are excluded");
+    console.log("Updated default exclusions to ensure nested vendor folders and other critical folders are excluded");
+  }
+  
+  // Ensure scanVendorDirectory is set to true by default
+  const scanVendorDirectory = config.get("scanVendorDirectory");
+  if (scanVendorDirectory === undefined) {
+    await config.update("scanVendorDirectory", true, vscode.ConfigurationTarget.Global);
+    console.log("Set scanVendorDirectory to true by default");
+  }
+  
+  // Ensure composerPackageDetection is set to "auto" by default
+  const composerPackageDetection = config.get("composerPackageDetection");
+  if (composerPackageDetection === undefined) {
+    await config.update("composerPackageDetection", "auto", vscode.ConfigurationTarget.Global);
+    console.log("Set composerPackageDetection to 'auto' by default");
   }
 }
 
@@ -280,7 +303,12 @@ function activate(context: vscode.ExtensionContext) {
   // Listen for configuration changes
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(e => {
-      if (e.affectsConfiguration('pkgVersion.excludeFolders')) {
+      if (
+        e.affectsConfiguration('pkgVersion.excludeFolders') ||
+        e.affectsConfiguration('pkgVersion.scanVendorDirectory') ||
+        e.affectsConfiguration('pkgVersion.composerPackageDetection')
+      ) {
+        console.log("Package Version configuration changed, refreshing dependencies view");
         dependencyProvider.refresh();
       }
     })

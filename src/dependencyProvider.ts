@@ -72,58 +72,107 @@ async function fetchLatestPackagistVersion(
     console.warn(`Invalid composer package name format: ${packageName}`)
     return undefined
   }
+  
+  // Clean package name for API requests
+  const cleanPackageName = packageName.trim().toLowerCase();
+  console.log(`Fetching latest version for ${cleanPackageName} from Packagist`);
+  
   try {
     // Use the Packagist API v2
     const response = await axios.get(
-      `https://repo.packagist.org/p2/${packageName}.json`
+      `https://repo.packagist.org/p2/${cleanPackageName}.json`,
+      { timeout: 5000 } // Add timeout to prevent hanging requests
     )
+    
     // The response contains package details, including versions
     if (
       response.data &&
       response.data.packages &&
-      response.data.packages[packageName]
+      response.data.packages[cleanPackageName]
     ) {
       // Get all versions, filter out dev/alpha/beta unless explicitly requested (more complex)
       // For simplicity, find the latest stable version
-      const versions = response.data.packages[packageName]
+      const versions = response.data.packages[cleanPackageName]
+      
+      if (!Array.isArray(versions) || versions.length === 0) {
+        console.warn(`No versions found for ${cleanPackageName} on Packagist.`);
+        return undefined;
+      }
+      
+      console.log(`Found ${versions.length} versions for ${cleanPackageName}`);
+      
       let latestStableVersion: string | undefined = undefined
       let latestVersionTime = 0
 
       for (const versionData of versions) {
+        if (!versionData.version || !versionData.version_normalized) {
+          continue; // Skip versions with missing data
+        }
+        
+        // Version contains dev/alpha/beta/RC?
+        const isDev = /dev|alpha|beta|RC/i.test(versionData.version);
+        
+        if (isDev && latestStableVersion) {
+          // Skip dev versions if we already found a stable version
+          continue;
+        }
+        
         if (
           versionData.version_normalized &&
-          semver.valid(versionData.version_normalized)
+          semver.valid(semver.coerce(versionData.version_normalized))
         ) {
           // Check if it's a stable version (no pre-release identifiers)
-          if (!semver.prerelease(versionData.version_normalized)) {
-            const versionTime = new Date(versionData.time).getTime()
-            // Find the most recently published stable version
-            // Packagist doesn't always list versions chronologically in the API response
-            if (versionTime > latestVersionTime) {
-              latestStableVersion = versionData.version
-              latestVersionTime = versionTime
+          const isPrerelease = semver.prerelease(versionData.version_normalized);
+          
+          if (!isPrerelease) {
+            // For stable versions, use time-based comparison if available
+            if (versionData.time) {
+              const versionTime = new Date(versionData.time).getTime()
+              // Find the most recently published stable version
+              if (versionTime > latestVersionTime) {
+                latestStableVersion = versionData.version
+                latestVersionTime = versionTime
+              }
+            } else {
+              // Fallback to semver comparison if time is not available
+              if (!latestStableVersion) {
+                latestStableVersion = versionData.version;
+              } else if (semver.gt(
+                semver.coerce(versionData.version_normalized) || '0.0.0', 
+                semver.coerce(latestStableVersion) || '0.0.0'
+              )) {
+                latestStableVersion = versionData.version;
+              }
             }
-            // Alternative: Use semver.compare to find the highest version number
-            // if (!latestStableVersion || semver.gt(versionData.version_normalized, semver.coerce(latestStableVersion)?.version || '0.0.0')) {
-            //     latestStableVersion = versionData.version;
-            // }
+          } else if (!latestStableVersion && isDev) {
+            // If we still don't have a stable version, use the dev version
+            if (!latestStableVersion) {
+              latestStableVersion = versionData.version;
+              if (versionData.time) {
+                latestVersionTime = new Date(versionData.time).getTime();
+              }
+            }
           }
         }
       }
+      
       if (latestStableVersion) {
+        console.log(`Latest version for ${cleanPackageName} is ${latestStableVersion}`);
         return latestStableVersion
       } else {
         // Fallback if no stable version found, maybe return latest pre-release?
         // For now, return undefined if no stable found.
-        console.warn(`No stable version found for ${packageName} on Packagist.`)
+        console.warn(`No stable version found for ${cleanPackageName} on Packagist.`)
       }
+    } else {
+      console.warn(`Unexpected response format for ${cleanPackageName}`);
     }
   } catch (error: any) {
     if (error.response && error.response.status === 404) {
-      console.warn(`Package ${packageName} not found on Packagist.`)
+      console.warn(`Package ${cleanPackageName} not found on Packagist.`)
     } else {
       console.error(
-        `Failed to fetch latest version for ${packageName} from Packagist:`,
+        `Failed to fetch latest version for ${cleanPackageName} from Packagist:`,
         error.message
       )
     }
@@ -279,12 +328,22 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
   > = this._onDidChangeTreeData.event
 
   /**
-   * Refreshes the tree view, triggering a re-scan of package files and dependencies.
-   * This is called when the user explicitly refreshes or when configuration changes.
+   * Refreshes the dependency tree view.
+   * Triggers a reload of all dependencies.
    */
   refresh(): void {
+    // Clear any cached data
+    this._cachedDependencies = undefined;
+    
+    // Notify that the tree data has changed, triggering a refresh
     this._onDidChangeTreeData.fire()
+    
+    // Log refresh for debugging
+    console.log("Dependency tree refreshed")
   }
+
+  // Add a private field to store cached dependencies
+  private _cachedDependencies?: Map<string, Dependency[]>;
 
   /**
    * Gets the exclude pattern from configuration for VS Code findFiles API.
@@ -395,36 +454,66 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
         return await this.getDepsInRequirementsTxt(element.resourceUri)
       } else if (filePath.endsWith("pubspec.yaml")) {
         return await this.getDepsInPubspecYaml(element.resourceUri)
+      } else if (filePath.endsWith("vendor") || path.basename(path.dirname(filePath)) === "vendor") {
+        // If this is a vendor directory, scan it for Composer packages
+        return await this.getDepsFromVendorDirectory(element.resourceUri)
+      } else if (filePath.endsWith("composer.lock")) {
+        // Add support for viewing dependencies directly from composer.lock
+        return await this.getDepsFromComposerLock(element.resourceUri)
       } else {
         // Should not happen based on findFiles pattern, but handle defensively
         return Promise.resolve([])
       }
     } else {
       // If no element, we are at the root. Find compatible package files in the workspace.
-      const patterns = [
-        "**/package.json",
-        "**/composer.json",
-        "**/requirements.txt",
-        "**/pubspec.yaml",
-      ]
+      const patterns: string[] = [];
       
-      // TODO: Add support for more package managers (Cargo.toml, go.mod, etc.)
+      // Get configuration settings
+      const configuration = vscode.workspace.getConfiguration("pkgVersion");
+      const scanVendorDirectory = configuration.get("scanVendorDirectory", true);
+      const composerPackageDetection = configuration.get("composerPackageDetection", "auto");
+      
+      // Always include these patterns
+      patterns.push("**/package.json");
+      patterns.push("**/requirements.txt");
+      patterns.push("**/pubspec.yaml");
+      
+      // Conditionally include composer patterns based on composerPackageDetection setting
+      if (["auto", "composer.json", "all"].includes(composerPackageDetection)) {
+        patterns.push("**/composer.json");
+      }
+      
+      if (["auto", "composer.lock", "all"].includes(composerPackageDetection)) {
+        patterns.push("**/composer.lock");
+      }
+      
+      if (["auto", "vendor", "all"].includes(composerPackageDetection) && scanVendorDirectory) {
+        patterns.push("**/vendor");
+      }
       
       // Get exclude pattern for VS Code findFiles
       const excludePattern = this.getExcludePattern();
       console.log(`Searching with exclude pattern: ${excludePattern}`);
       
+      // Special handling for vendor directories - we need to exclude them from the general exclude pattern
+      let modifiedExcludePattern = excludePattern;
+      if (scanVendorDirectory && ["auto", "vendor", "all"].includes(composerPackageDetection)) {
+        const excludePatternsWithoutVendor = excludePattern.split(",").filter(pattern => !pattern.includes("vendor"));
+        modifiedExcludePattern = excludePatternsWithoutVendor.join(",");
+      }
+      
       // First apply the VS Code's built-in findFiles exclusion
       return vscode.workspace
-        .findFiles(`{${patterns.join(",")}}`, excludePattern)
-        .then((uris) => {
+        .findFiles(`{${patterns.join(",")}}`, modifiedExcludePattern)
+        .then(async (uris) => {
           console.log(`Found ${uris.length} package files before filtering`);
           
           // Then apply our custom exclusion logic as a secondary filter
           // This is needed because VS Code's glob pattern handling sometimes doesn't 
-          // exclude everything we want
+          // exclude everything we want, but make an exception for vendor directories
           const filteredUris = uris.filter(uri => {
-            const excluded = this.isFileExcluded(uri.fsPath);
+            const isVendor = uri.fsPath.endsWith("vendor") || path.basename(path.dirname(uri.fsPath)) === "vendor";
+            const excluded = (!scanVendorDirectory || !isVendor) && this.isFileExcluded(uri.fsPath);
             if (excluded) {
               console.log(`Additional filtering: excluded ${uri.fsPath}`);
             }
@@ -432,7 +521,9 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
           });
           
           console.log(`Filtered to ${filteredUris.length} package files after custom exclusion`);
-          return filteredUris.map((uri) => {
+          
+          // Convert URIs to Dependency objects
+          const packageFiles = filteredUris.map((uri) => {
             const relativePath = vscode.workspace.asRelativePath(uri)
             // Pass the uri to the Dependency constructor
             return new Dependency(
@@ -441,7 +532,66 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
               vscode.TreeItemCollapsibleState.Collapsed,
               uri
             )
-          })
+          });
+          
+          // Auto-scan Composer projects if needed
+          if (["auto", "all"].includes(composerPackageDetection) && this.workspaceRoot) {
+            // Determine what Composer files we've already found
+            const hasComposerJson = packageFiles.some(dep => dep.resourceUri?.fsPath.endsWith("composer.json"));
+            const hasComposerLock = packageFiles.some(dep => dep.resourceUri?.fsPath.endsWith("composer.lock"));
+            const hasVendorDir = packageFiles.some(dep => dep.resourceUri?.fsPath.endsWith("vendor"));
+            
+            // If we need certain files that weren't found yet, try to find them in the workspace root
+            if (!hasComposerJson && ["auto", "composer.json", "all"].includes(composerPackageDetection)) {
+              const rootComposerJsonPath = path.join(this.workspaceRoot, "composer.json");
+              if (this.pathExists(rootComposerJsonPath)) {
+                const rootComposerJsonUri = vscode.Uri.file(rootComposerJsonPath);
+                const relativePath = vscode.workspace.asRelativePath(rootComposerJsonUri);
+                packageFiles.push(
+                  new Dependency(
+                    relativePath,
+                    "",
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    rootComposerJsonUri
+                  )
+                );
+              }
+            }
+            
+            if (!hasComposerLock && ["auto", "composer.lock", "all"].includes(composerPackageDetection)) {
+              const rootComposerLockPath = path.join(this.workspaceRoot, "composer.lock");
+              if (this.pathExists(rootComposerLockPath)) {
+                const rootComposerLockUri = vscode.Uri.file(rootComposerLockPath);
+                const relativePath = vscode.workspace.asRelativePath(rootComposerLockUri);
+                packageFiles.push(
+                  new Dependency(
+                    relativePath,
+                    "",
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    rootComposerLockUri
+                  )
+                );
+              }
+            }
+            
+            if (!hasVendorDir && scanVendorDirectory && ["auto", "vendor", "all"].includes(composerPackageDetection)) {
+              const rootVendorPath = path.join(this.workspaceRoot, "vendor");
+              if (this.pathExists(rootVendorPath)) {
+                const rootVendorUri = vscode.Uri.file(rootVendorPath);
+                const relativePath = vscode.workspace.asRelativePath(rootVendorUri);
+                packageFiles.push(
+                  new Dependency(
+                    relativePath,
+                    "",
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    rootVendorUri
+                  )
+                );
+              }
+            }
+          }
+          
+          return packageFiles;
         })
     }
   }
@@ -614,6 +764,442 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
         )}`
       )
       return []
+    }
+  }
+
+  /**
+   * Scans the vendor directory to find installed Composer packages
+   * and creates dependency objects for them.
+   * 
+   * This is used when composer.json is not available or as a supplemental
+   * source of information about installed packages.
+   * 
+   * @param vendorDir - The URI of the vendor directory
+   * @returns Promise resolving to array of dependencies
+   */
+  private async getDepsFromVendorDirectory(vendorDir: vscode.Uri): Promise<Dependency[]> {
+    try {
+      // First look for composer.lock file in the parent directory of vendor
+      // This is typically where Composer places the vendor directory, and composer.lock has the most accurate info
+      const vendorParentDir = path.dirname(vendorDir.fsPath);
+      const composerLockPath = path.join(vendorParentDir, 'composer.lock');
+      
+      if (this.pathExists(composerLockPath)) {
+        console.log(`Found composer.lock at ${composerLockPath}, parsing installed packages`);
+        try {
+          const buffer = await vscode.workspace.fs.readFile(vscode.Uri.file(composerLockPath));
+          const content = Buffer.from(buffer).toString("utf8");
+          const lockData = JSON.parse(content);
+          
+          if (lockData.packages && Array.isArray(lockData.packages)) {
+            console.log(`Found ${lockData.packages.length} packages in composer.lock`);
+            const dependencies: Dependency[] = [];
+            
+            // Process packages from the lock file
+            for (const pkg of lockData.packages) {
+              if (pkg.name && pkg.version) {
+                console.log(`Processing package from composer.lock: ${pkg.name} (${pkg.version})`);
+                
+                // Get the latest version from Packagist
+                const latestVersion = await fetchLatestPackagistVersion(pkg.name);
+                
+                if (latestVersion) {
+                  const updateType = getUpdateType(pkg.version, latestVersion);
+                  dependencies.push(
+                    new Dependency(
+                      pkg.name,
+                      pkg.version,
+                      vscode.TreeItemCollapsibleState.None,
+                      undefined,
+                      latestVersion,
+                      updateType,
+                      "composer",
+                      composerLockPath
+                    )
+                  );
+                } else {
+                  dependencies.push(
+                    new Dependency(
+                      pkg.name,
+                      pkg.version,
+                      vscode.TreeItemCollapsibleState.None,
+                      undefined,
+                      undefined,
+                      "none",
+                      "composer",
+                      composerLockPath
+                    )
+                  );
+                }
+              }
+            }
+            
+            // Also process dev packages if available
+            if (lockData["packages-dev"] && Array.isArray(lockData["packages-dev"])) {
+              console.log(`Found ${lockData["packages-dev"].length} dev packages in composer.lock`);
+              
+              for (const pkg of lockData["packages-dev"]) {
+                if (pkg.name && pkg.version) {
+                  console.log(`Processing dev package from composer.lock: ${pkg.name} (${pkg.version})`);
+                  
+                  // Get the latest version from Packagist
+                  const latestVersion = await fetchLatestPackagistVersion(pkg.name);
+                  
+                  if (latestVersion) {
+                    const updateType = getUpdateType(pkg.version, latestVersion);
+                    dependencies.push(
+                      new Dependency(
+                        pkg.name,
+                        pkg.version,
+                        vscode.TreeItemCollapsibleState.None,
+                        undefined,
+                        latestVersion,
+                        updateType,
+                        "composer",
+                        composerLockPath
+                      )
+                    );
+                  } else {
+                    dependencies.push(
+                      new Dependency(
+                        pkg.name,
+                        pkg.version,
+                        vscode.TreeItemCollapsibleState.None,
+                        undefined,
+                        undefined,
+                        "none",
+                        "composer",
+                        composerLockPath
+                      )
+                    );
+                  }
+                }
+              }
+            }
+            
+            return dependencies;
+          }
+        } catch (err) {
+          console.error(`Error parsing composer.lock at ${composerLockPath}:`, err);
+          // Continue to other methods if lock file parsing fails
+        }
+      }
+    
+      // Next look for the installed.json file which contains detailed information about all installed packages
+      // Since Composer 2.0, this file is in vendor/composer/installed.json
+      // For older versions, it was directly in vendor/composer
+      const installedJsonPathsToTry = [
+        path.join(vendorDir.fsPath, "composer", "installed.json"),
+        path.join(vendorDir.fsPath, "composer", "installed.php") // Some setups use PHP format
+      ];
+      
+      console.log(`Checking for installed.json in: ${installedJsonPathsToTry.join(', ')}`);
+      
+      // Try to find and parse installed.json first (more efficient and accurate)
+      for (const installedJsonPath of installedJsonPathsToTry) {
+        if (this.pathExists(installedJsonPath)) {
+          console.log(`Found installed manifest at: ${installedJsonPath}`);
+          try {
+            const installedJsonUri = vscode.Uri.file(installedJsonPath);
+            const buffer = await vscode.workspace.fs.readFile(installedJsonUri);
+            const content = Buffer.from(buffer).toString("utf8");
+            
+            // Only proceed if it seems to be JSON content
+            if (content.trim().startsWith("{") || content.trim().startsWith("[")) {
+              const json = JSON.parse(content);
+              
+              // Handle both old and new format of installed.json
+              const packages = json.packages || json; // New format has a packages property
+              
+              if (Array.isArray(packages)) {
+                console.log(`Found ${packages.length} packages in installed.json`);
+                const dependencies: Dependency[] = [];
+                
+                for (const pkg of packages) {
+                  if (pkg.name && pkg.version) {
+                    console.log(`Processing package from installed.json: ${pkg.name} (${pkg.version})`);
+                    
+                    // Get the latest version from Packagist
+                    const latestVersion = await fetchLatestPackagistVersion(pkg.name);
+                    
+                    if (latestVersion) {
+                      const updateType = getUpdateType(pkg.version, latestVersion);
+                      dependencies.push(
+                        new Dependency(
+                          pkg.name,
+                          pkg.version,
+                          vscode.TreeItemCollapsibleState.None,
+                          undefined,
+                          latestVersion,
+                          updateType,
+                          "composer",
+                          installedJsonPath
+                        )
+                      );
+                    } else {
+                      dependencies.push(
+                        new Dependency(
+                          pkg.name,
+                          pkg.version,
+                          vscode.TreeItemCollapsibleState.None,
+                          undefined,
+                          undefined,
+                          "none",
+                          "composer",
+                          installedJsonPath
+                        )
+                      );
+                    }
+                  }
+                }
+                
+                return dependencies;
+              }
+            }
+          } catch (err) {
+            console.error(`Error parsing installed.json at ${installedJsonPath}:`, err);
+            // Continue to fallback method
+          }
+        }
+      }
+      
+      // Fallback: Find all composer.json files inside vendor packages
+      console.log("Installed.json not found or could not be parsed, falling back to scanning individual packages");
+      
+      // First list the directories inside vendor to find package directories
+      try {
+        const entries = await vscode.workspace.fs.readDirectory(vendorDir);
+        console.log(`Found ${entries.length} entries in vendor directory`);
+        
+        const dependencies: Dependency[] = [];
+        
+        // Process each vendor namespace directory
+        for (const [name, type] of entries) {
+          // Skip files and composer directory
+          if (type !== vscode.FileType.Directory || name === 'composer') {
+            continue;
+          }
+          
+          const vendorNameDir = path.join(vendorDir.fsPath, name);
+          console.log(`Scanning vendor namespace: ${name}`);
+          
+          try {
+            // List packages within this vendor namespace
+            const packageEntries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(vendorNameDir));
+            
+            for (const [packageName, packageType] of packageEntries) {
+              if (packageType !== vscode.FileType.Directory) {
+                continue;
+              }
+              
+              const packageDir = path.join(vendorNameDir, packageName);
+              const composerJsonPath = path.join(packageDir, 'composer.json');
+              
+              // Check if this package has a composer.json
+              if (this.pathExists(composerJsonPath)) {
+                try {
+                  const fullPackageName = `${name}/${packageName}`;
+                  console.log(`Found package: ${fullPackageName}`);
+                  
+                  const buffer = await vscode.workspace.fs.readFile(vscode.Uri.file(composerJsonPath));
+                  const content = Buffer.from(buffer).toString("utf8");
+                  const json = JSON.parse(content);
+                  
+                  // Use the name from composer.json if available
+                  const actualPackageName = json.name || fullPackageName;
+                  
+                  // Try to get the version from composer.json
+                  let packageVersion = json.version;
+                  
+                  // If version is not in composer.json, try to find it in other common locations
+                  if (!packageVersion) {
+                    // Try looking for VERSION file
+                    const versionFilePath = path.join(packageDir, "VERSION");
+                    if (this.pathExists(versionFilePath)) {
+                      try {
+                        const versionBuffer = await vscode.workspace.fs.readFile(vscode.Uri.file(versionFilePath));
+                        packageVersion = Buffer.from(versionBuffer).toString("utf8").trim();
+                      } catch (err) {
+                        console.error(`Error reading VERSION file for ${actualPackageName}:`, err);
+                      }
+                    }
+                    
+                    // If still no version, try looking for version in the package's installed.php
+                    if (!packageVersion) {
+                      const installedPhpPath = path.join(packageDir, "installed.php");
+                      if (this.pathExists(installedPhpPath)) {
+                        packageVersion = "unknown"; // We can't easily parse PHP files
+                      }
+                    }
+                  }
+                  
+                  // If we still don't have a version, default to "unknown"
+                  if (!packageVersion) {
+                    packageVersion = "unknown";
+                  }
+                  
+                  // Get the latest version from Packagist
+                  const latestVersion = await fetchLatestPackagistVersion(actualPackageName);
+                  
+                  // Create a dependency object
+                  if (latestVersion) {
+                    // For "unknown" version, always show as needing update
+                    const updateType = packageVersion === "unknown" ? "patch" : getUpdateType(packageVersion, latestVersion);
+                    dependencies.push(
+                      new Dependency(
+                        actualPackageName,
+                        packageVersion,
+                        vscode.TreeItemCollapsibleState.None,
+                        undefined,
+                        latestVersion,
+                        updateType,
+                        "composer",
+                        composerJsonPath
+                      )
+                    );
+                  } else {
+                    dependencies.push(
+                      new Dependency(
+                        actualPackageName,
+                        packageVersion,
+                        vscode.TreeItemCollapsibleState.None,
+                        undefined,
+                        undefined,
+                        "none",
+                        "composer",
+                        composerJsonPath
+                      )
+                    );
+                  }
+                } catch (err) {
+                  console.error(`Error processing package ${name}/${packageName}:`, err);
+                  // Continue with the next package
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`Error reading vendor namespace directory ${vendorNameDir}:`, err);
+            // Continue with the next vendor namespace
+          }
+        }
+        
+        console.log(`Total composer packages found in vendor: ${dependencies.length}`);
+        return dependencies;
+      } catch (err) {
+        console.error(`Error reading vendor directory structure: ${err}`);
+      }
+      
+      // Fallback method if directory listing fails: use workspace.findFiles 
+      console.log("Using fallback method with workspace.findFiles");
+      const vendorComposerJsonFiles = await vscode.workspace.findFiles(
+        new vscode.RelativePattern(vendorDir.fsPath, "**/composer.json"),
+        "**/vendor/**/vendor/**" // Exclude nested vendor directories
+      );
+      
+      console.log(`Found ${vendorComposerJsonFiles.length} composer.json files in vendor directory`);
+      
+      // Process each found composer.json file
+      const dependencies: Dependency[] = [];
+      
+      for (const composerJsonUri of vendorComposerJsonFiles) {
+        try {
+          // Skip composer's own composer.json
+          if (composerJsonUri.fsPath.includes(path.join("vendor", "composer", "composer.json"))) {
+            continue;
+          }
+          
+          // The path structure should be vendor/vendor-name/package-name/composer.json
+          const packagePath = path.relative(vendorDir.fsPath, composerJsonUri.fsPath);
+          const pathParts = packagePath.split(path.sep);
+          
+          // Skip if not in the expected structure
+          if (pathParts.length < 2) {
+            continue;
+          }
+          
+          // Extract vendor and package name if possible
+          const vendorName = pathParts[0];
+          let packageName = pathParts[1];
+          let fullPackageName = `${vendorName}/${packageName}`;
+          
+          // Read the package's composer.json to get its version
+          const buffer = await vscode.workspace.fs.readFile(composerJsonUri);
+          const content = Buffer.from(buffer).toString("utf8");
+          const json = JSON.parse(content);
+          
+          // Use the name from composer.json if available
+          if (json.name) {
+            fullPackageName = json.name;
+          }
+          
+          // Try to get the version from composer.json
+          let packageVersion = json.version;
+          
+          // If version is not in composer.json, try to find it in other common locations
+          if (!packageVersion) {
+            // Look for version in VERSION file
+            const versionFilePath = path.join(path.dirname(composerJsonUri.fsPath), "VERSION");
+            if (this.pathExists(versionFilePath)) {
+              try {
+                const versionFileUri = vscode.Uri.file(versionFilePath);
+                const versionBuffer = await vscode.workspace.fs.readFile(versionFileUri);
+                packageVersion = Buffer.from(versionBuffer).toString("utf8").trim();
+              } catch (err) {
+                console.error(`Error reading VERSION file for ${fullPackageName}:`, err);
+              }
+            }
+          }
+          
+          // If we have a package name but no version, use a default "unknown" version
+          if (fullPackageName && !packageVersion) {
+            packageVersion = "unknown";
+          }
+          
+          if (fullPackageName && packageVersion) {
+            // Get the latest version from Packagist
+            const latestVersion = await fetchLatestPackagistVersion(fullPackageName);
+            
+            // Create a dependency object
+            if (latestVersion) {
+              // For "unknown" version, always show as needing update
+              const updateType = packageVersion === "unknown" ? "patch" : getUpdateType(packageVersion, latestVersion);
+              dependencies.push(
+                new Dependency(
+                  fullPackageName,
+                  packageVersion,
+                  vscode.TreeItemCollapsibleState.None,
+                  undefined,
+                  latestVersion,
+                  updateType,
+                  "composer",
+                  composerJsonUri.fsPath
+                )
+              );
+            } else {
+              dependencies.push(
+                new Dependency(
+                  fullPackageName,
+                  packageVersion,
+                  vscode.TreeItemCollapsibleState.None,
+                  undefined,
+                  undefined,
+                  "none",
+                  "composer",
+                  composerJsonUri.fsPath
+                )
+              );
+            }
+          }
+        } catch (err) {
+          console.error(`Error processing vendor package ${composerJsonUri.fsPath}:`, err);
+          // Continue with the next package
+        }
+      }
+      
+      return dependencies;
+    } catch (err: any) {
+      console.error(`Error scanning vendor directory ${vendorDir.fsPath}:`, err);
+      return [];
     }
   }
 
@@ -850,6 +1436,115 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
           )}`
         )
       }
+      return []
+    }
+  }
+
+  /**
+   * Parses a composer.lock file and extracts all dependencies.
+   * This provides the most accurate view of currently installed packages.
+   * 
+   * @param composerLockUri - URI of the composer.lock file
+   * @returns Promise resolving to array of dependencies
+   */
+  private async getDepsFromComposerLock(
+    composerLockUri: vscode.Uri
+  ): Promise<Dependency[]> {
+    if (!this.pathExists(composerLockUri.fsPath)) {
+      return Promise.resolve([])
+    }
+    try {
+      const buffer = await vscode.workspace.fs.readFile(composerLockUri)
+      const content = Buffer.from(buffer).toString("utf8")
+      const lockData = JSON.parse(content)
+      const dependencies: Dependency[] = []
+
+      // Process regular packages
+      if (lockData.packages && Array.isArray(lockData.packages)) {
+        for (const pkg of lockData.packages) {
+          if (pkg.name && pkg.version) {
+            // Get the latest version from Packagist
+            const latestVersion = await fetchLatestPackagistVersion(pkg.name)
+            
+            if (latestVersion) {
+              const updateType = getUpdateType(pkg.version, latestVersion)
+              dependencies.push(
+                new Dependency(
+                  pkg.name,
+                  pkg.version,
+                  vscode.TreeItemCollapsibleState.None,
+                  undefined,
+                  latestVersion,
+                  updateType,
+                  "composer",
+                  composerLockUri.fsPath
+                )
+              )
+            } else {
+              dependencies.push(
+                new Dependency(
+                  pkg.name,
+                  pkg.version,
+                  vscode.TreeItemCollapsibleState.None,
+                  undefined,
+                  undefined,
+                  "none",
+                  "composer",
+                  composerLockUri.fsPath
+                )
+              )
+            }
+          }
+        }
+      }
+
+      // Process dev packages
+      if (lockData["packages-dev"] && Array.isArray(lockData["packages-dev"])) {
+        for (const pkg of lockData["packages-dev"]) {
+          if (pkg.name && pkg.version) {
+            // Get the latest version from Packagist
+            const latestVersion = await fetchLatestPackagistVersion(pkg.name)
+            
+            if (latestVersion) {
+              const updateType = getUpdateType(pkg.version, latestVersion)
+              dependencies.push(
+                new Dependency(
+                  pkg.name,
+                  pkg.version,
+                  vscode.TreeItemCollapsibleState.None,
+                  undefined,
+                  latestVersion,
+                  updateType,
+                  "composer",
+                  composerLockUri.fsPath
+                )
+              )
+            } else {
+              dependencies.push(
+                new Dependency(
+                  pkg.name,
+                  pkg.version,
+                  vscode.TreeItemCollapsibleState.None,
+                  undefined,
+                  undefined,
+                  "none",
+                  "composer",
+                  composerLockUri.fsPath
+                )
+              )
+            }
+          }
+        }
+      }
+
+      return dependencies
+    } catch (err: any) {
+      console.error(`Error reading or parsing ${composerLockUri.fsPath}:`, err)
+      vscode.window.showErrorMessage(
+        `Failed to read dependencies from ${vscode.workspace.asRelativePath(
+          composerLockUri
+        )}`
+      )
       return []
     }
   }
@@ -1467,10 +2162,10 @@ class Dependency extends vscode.TreeItem {
     // Update tooltip and description to show both current and latest version
     if (latestVersion && updateType && updateType !== "none") {
       this.tooltip = `${this.label}: ${version} → ${latestVersion} (${updateType} update)`
-      this.description = `${version} → ${latestVersion}`
+      // Description is now set in the icon/indicator section
     } else {
       this.tooltip = `${this.label}${version ? `: ${version}` : ""}`
-      this.description = version
+      // Description is now set in the icon/indicator section
     }
     
     // Set contextValue based on whether this is a package with an update available
@@ -1478,35 +2173,25 @@ class Dependency extends vscode.TreeItem {
       this.contextValue = "dependency"
     }
     
-    // Set icon based on updateType using ThemeIcon
+    // Set icon based on updateType using consistent emoji indicators matching documentation
     if (this.updateType && this.updateType !== "none") {
-      // Different colors for different update types
+      // Use consistent emoji indicators for update types
       if (this.updateType === "major") {
-        this.iconPath = new vscode.ThemeIcon(
-          "circle-filled",
-          new vscode.ThemeColor("errorForeground")
-        ) // Red for major updates
+        this.iconPath = new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("errorForeground"))
+        this.description = `🔴 ${version} → ${latestVersion}`
       } else if (this.updateType === "minor") {
-        this.iconPath = new vscode.ThemeIcon(
-          "circle-filled",
-          new vscode.ThemeColor("editorWarning.foreground")
-        ) // Yellow/orange for minor updates
+        this.iconPath = new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("editorWarning.foreground"))
+        this.description = `🟠 ${version} → ${latestVersion}`
       } else if (this.updateType === "patch") {
-        this.iconPath = new vscode.ThemeIcon(
-          "circle-filled",
-          new vscode.ThemeColor("editorInfo.foreground")
-        ) // Blue for patch updates
+        this.iconPath = new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("editorInfo.foreground"))
+        this.description = `🟡 ${version} → ${latestVersion}`
       } else {
-        this.iconPath = new vscode.ThemeIcon(
-          "circle-filled",
-          new vscode.ThemeColor("focusBorder")
-        ) // Gray for prereleases
+        this.iconPath = new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("focusBorder"))
+        this.description = `🔵 ${version} → ${latestVersion}`
       }
     } else {
-      this.iconPath = new vscode.ThemeIcon(
-        "pass-filled",
-        new vscode.ThemeColor("charts.green")
-      ) // Green check mark for up-to-date packages
+      this.iconPath = new vscode.ThemeIcon("pass-filled", new vscode.ThemeColor("charts.green"))
+      this.description = version
     }
 
     // Set command for opening the file

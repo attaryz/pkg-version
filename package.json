@@ -2,7 +2,7 @@
   "name": "pkg-version",
   "displayName": "Package Version Checker",
   "description": "Checks package versions in common manifest files (package.json, composer.json, requirements.txt, pubspec.yaml) for updates.",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "publisher": "YourPublisherName",
   "engines": {
     "vscode": "^1.80.0"
@@ -14,8 +14,11 @@
     "onView:packageDependencies",
     "workspaceContains:**/package.json",
     "workspaceContains:**/composer.json",
+    "workspaceContains:**/composer.lock",
     "workspaceContains:**/requirements.txt",
-    "workspaceContains:**/pubspec.yaml"
+    "workspaceContains:**/pubspec.yaml",
+    "workspaceContains:**/vendor/*/composer.json",
+    "workspaceContains:**/vendor/composer/installed.json"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -104,7 +107,7 @@
           "type": "array",
           "default": [
             "**/node_modules/**",
-            "**/vendor/**",
+            "**/vendor/**/vendor/**",
             "**/venv/**",
             "**/.git/**",
             "**/build/**",
@@ -115,7 +118,18 @@
             "**/bin/**",
             "**/__pycache__/**"
           ],
-          "description": "Glob patterns for folders to exclude when searching for package files."
+          "description": "Glob patterns for folders to exclude when searching for package files. Note: The vendor folder will still be accessible directly for Composer package scanning."
+        },
+        "pkgVersion.scanVendorDirectory": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to scan the vendor directory for installed Composer packages when no composer.json is found."
+        },
+        "pkgVersion.composerPackageDetection": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "composer.json", "composer.lock", "vendor", "all"],
+          "description": "How to detect Composer packages: 'auto' (try all methods), 'composer.json' (only from composer.json), 'composer.lock' (only from composer.lock), 'vendor' (only from vendor dir), or 'all' (use all methods)."
         }
       }
     }
@@ -126,7 +140,9 @@
     "watch": "tsc -watch -p ./",
     "lint": "eslint .",
     "pretest": "npm run compile && npm run lint",
-    "test": "node ./test/runTest.js"
+    "test": "node ./test/runTest.js",
+    "publish": "vsce publish",
+    "package": "vsce package"
   },
   "dependencies": {
     "js-yaml": "^4.1.0",
