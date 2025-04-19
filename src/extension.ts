@@ -3,6 +3,8 @@
 import * as vscode from "vscode";
 import { DependencyProvider } from "./dependencyProvider"; // Import the provider
 import * as path from "path";
+import { getSnykClient } from "./utils/snykClient";
+import { Dependency } from "./models/dependency"; // Import Dependency model
 
 // Status bar item to display dependency statistics
 let dependencyStatusBarItem: vscode.StatusBarItem;
@@ -418,6 +420,125 @@ export function activate(context: vscode.ExtensionContext) {
           `"${pattern}" is already in the excluded patterns list`
         );
       }
+    }
+  );
+  context.subscriptions.push(disposable);
+  
+  // Register the check vulnerabilities command
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.checkVulnerabilities",
+    async () => {
+      // Get the Snyk client
+      const snykClient = getSnykClient();
+      
+      // Check if token is configured
+      const isTokenValid = await snykClient.isTokenValid();
+      if (!isTokenValid) {
+        const configureToken = "Configure API Token";
+        const response = await vscode.window.showErrorMessage(
+          "Snyk API token not configured or invalid. Please configure a valid token to check for vulnerabilities.",
+          configureToken
+        );
+        
+        if (response === configureToken) {
+          vscode.commands.executeCommand(
+            "workbench.action.openSettings",
+            "pkgVersion.snykApiToken"
+          );
+        }
+        return;
+      }
+      
+      // Get all dependencies from the provider
+      const allDependencies = await dependencyProvider.getAllDependencies();
+      
+      // Filter out non-individual dependencies (package files, categories, etc.)
+      const packageDependencies = allDependencies.filter(
+        (dep: Dependency) => dep.label && dep.packageManager && !dep.children
+      );
+      
+      if (packageDependencies.length === 0) {
+        vscode.window.showInformationMessage(
+          "No package dependencies found to check for vulnerabilities."
+        );
+        return;
+      }
+      
+      // Show progress indicator
+      vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Checking for vulnerabilities",
+          cancellable: true,
+        },
+        async (progress, token) => {
+          let vulnerablePackages = 0;
+          let checkedPackages = 0;
+          let totalVulnerabilities = 0;
+          
+          // Calculate increment step for progress bar
+          const incrementStep = 100 / packageDependencies.length;
+          
+          for (let i = 0; i < packageDependencies.length; i++) {
+            if (token.isCancellationRequested) {
+              vscode.window.showInformationMessage(
+                "Vulnerability check cancelled."
+              );
+              break;
+            }
+            
+            const dependency = packageDependencies[i];
+            progress.report({
+              message: `Checking ${dependency.label} (${i + 1}/${
+                packageDependencies.length
+              })`,
+              increment: incrementStep,
+            });
+            
+            // Skip if no version
+            if (!dependency.label || !dependency.packageManager) {
+              continue;
+            }
+            
+            // Check for vulnerabilities
+            const vulnerabilities = await snykClient.checkPackageVulnerabilities(
+              dependency.label,
+              dependency.version || "",
+              dependency.packageManager || ""
+            );
+            
+            // Update the dependency with vulnerability info
+            if (vulnerabilities && vulnerabilities.length > 0) {
+              dependency.vulnerabilities = vulnerabilities;
+              vulnerablePackages++;
+              totalVulnerabilities += vulnerabilities.length;
+            }
+            
+            checkedPackages++;
+          }
+          
+          // Show summary
+          if (vulnerablePackages > 0) {
+            const viewDetails = "View Details";
+            const response = await vscode.window.showWarningMessage(
+              `Found ${totalVulnerabilities} vulnerabilities in ${vulnerablePackages} packages.`,
+              viewDetails
+            );
+            
+            if (response === viewDetails) {
+              // Refresh view to show vulnerability indicators
+              dependencyProvider.refresh();
+            }
+          } else {
+            vscode.window.showInformationMessage(
+              `No vulnerabilities found in ${checkedPackages} checked packages.`
+            );
+          }
+          
+          // Refresh the view to show vulnerability status
+          dependencyProvider.refresh();
+        }
+      );
     }
   );
   context.subscriptions.push(disposable);

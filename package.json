@@ -60,6 +60,11 @@
         "command": "pkg-version.updateAllPackages",
         "title": "Update All Packages",
         "icon": "$(sync)"
+      },
+      {
+        "command": "pkg-version.checkVulnerabilities",
+        "title": "Check for Security Vulnerabilities",
+        "icon": "$(shield)"
       }
     ],
     "menus": {
@@ -75,6 +80,12 @@
           "when": "view == packageDependencies",
           "group": "1_updates@1",
           "icon": "$(arrow-up)"
+        },
+        {
+          "command": "pkg-version.checkVulnerabilities",
+          "when": "view == packageDependencies",
+          "group": "1_updates@2",
+          "icon": "$(shield)"
         },
         {
           "command": "pkg-version.manageExclusions",
@@ -159,6 +170,16 @@
             "all"
           ],
           "description": "How to detect Composer packages: 'auto' (try all methods), 'composer.json' (only from composer.json), 'composer.lock' (only from composer.lock), 'vendor' (only from vendor dir), or 'all' (use all methods)."
+        },
+        "pkgVersion.snykApiToken": {
+          "type": "string",
+          "default": "",
+          "description": "API token for Snyk vulnerability scanning. Get your token from https://app.snyk.io/account"
+        },
+        "pkgVersion.enableVulnerabilityChecking": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable automatic vulnerability checking when loading dependencies (requires Snyk API token)"
         }
       }
     }

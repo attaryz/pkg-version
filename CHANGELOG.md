@@ -2,6 +2,25 @@
 
 All notable changes to the "pkg-version" extension will be documented in this file.
 
+## [2.0.0] - 2025-04-20
+
+### Added
+- Full implementation of security vulnerability checking via Snyk API
+- Command to scan all dependencies for known security vulnerabilities
+- Visual indicators for vulnerable packages in the dependency tree
+
+### Fixed
+- Fixed "command 'pkg-version.checkVulnerabilities' not found" error
+- Resolved issue with command registration for security vulnerability checking
+- Improved build process to ensure all commands are properly registered
+
+## [1.0.11] - 2025-04-20
+
+### Fixed
+- Fixed "command 'pkg-version.checkVulnerabilities' not found" error
+- Resolved issue with command registration for security vulnerability checking
+- Improved build process to ensure all commands are properly registered
+
 ## [1.0.10]
 
 ## [1.0.9] - 2025-04-19

@@ -18,6 +18,10 @@ A VS Code extension for checking and updating package dependencies across multip
 * One-click dependency updates
 * Bulk update capabilities
 * Status bar notification of available updates
+* Security vulnerability scanning:
+  * Integration with Snyk API for vulnerability detection
+  * Visual indicators for vulnerable packages
+  * Detailed vulnerability information on hover
 * Flexible exclusion options:
   * Folder exclusion for large projects
   * Custom pattern exclusion for granular control
@@ -101,19 +105,36 @@ To add support for a new package manager:
    - 🟡 Patch updates (bug fixes)
    - 🔵 Prerelease versions
 
+### Checking for Updates
+
+1. Open the "PACKAGE DEPENDENCIES" view
+2. Click the refresh icon to check for updates
+3. Dependencies with available updates will display colored indicators:
+   * 🔴 Major update available
+   * 🟠 Minor update available
+   * 🟡 Patch update available
+
 ### Updating Packages
 
-The extension provides several ways to update packages:
+1. To update an individual package, click the update icon next to it
+2. To update all packages, click the update icon in the view's title bar
+3. The extension will perform the update and show the results
 
-1. **Update a Single Package**:
-   - Hover over a dependency with an available update
-   - Click the "Update Package" button that appears
-   - The package will be updated to the latest version while preserving version constraints (^, ~, etc.)
+### Security Vulnerability Scanning
 
-2. **Update All Packages**:
-   - Click the update all icon in the Package Dependencies view header
-   - Confirm that you want to update all outdated packages
-   - The extension will update all outdated packages and show a progress notification
+1. Configure your Snyk API token in the extension settings:
+   * Get an API token from [Snyk](https://app.snyk.io/account)
+   * Open VS Code settings and search for "pkg-version"
+   * Add your token to the "Snyk API Token" field
+2. Click the shield icon in the view's title bar to scan for vulnerabilities
+3. Vulnerable packages will display a shield indicator
+4. Hover over vulnerable packages to see detailed information
+
+### Managing Exclusions
+
+1. Right-click on a folder in the Explorer view and select "Exclude Folder from Package Checks"
+2. To add custom exclusion patterns, click the gear icon in the view's title bar
+3. Manage exclusions from the extension settings
 
 ### Commands
 
@@ -126,25 +147,6 @@ The extension provides several commands that can be accessed via the Command Pal
 - **Exclude Folder**: Exclude a folder from dependency scanning
 - **Exclude Custom Pattern**: Exclude specific files or nested directories using glob patterns
 - **Manage Exclusions**: View and remove folder exclusions
-
-### Excluding Folders and Files
-
-To exclude folders from scanning (useful for large monorepos or test directories):
-
-1. Right-click on a folder in the Explorer view
-2. Select "Exclude Folder from Package Checks"
-3. The folder will be excluded from future scans
-
-To exclude specific files or deeper nested directories:
-1. Open the Package Dependencies view
-2. Click on the "Exclude Custom Pattern" button in the view header
-3. Enter a glob pattern (e.g., **/specific/path/** or **/*.specific.json)
-4. The pattern will be added to the exclusion list
-
-To manage exclusions:
-1. Open the Command Palette
-2. Search for "Package Version: Manage Exclusions"
-3. Select the exclusions you want to remove
 
 ## Extension Settings
 

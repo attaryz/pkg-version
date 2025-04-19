@@ -500,4 +500,43 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
 
     return outdatedDependencies;
   }
+
+  /**
+   * Gets all dependencies (including all nested dependencies) from the workspace
+   * @returns Promise resolving to array of all dependency items
+   */
+  async getAllDependencies(): Promise<Dependency[]> {
+    if (!this.workspaceRoot) {
+      return [];
+    }
+    
+    const allDependencies: Dependency[] = [];
+    
+    // Get all package files first
+    const packageFiles = await this.getChildren();
+    
+    // Process each package file to get its dependencies
+    for (const packageFile of packageFiles) {
+      // Add the package file itself
+      allDependencies.push(packageFile);
+      
+      // Add all dependencies of this package file
+      if (packageFile.collapsibleState === vscode.TreeItemCollapsibleState.Collapsed || 
+          packageFile.collapsibleState === vscode.TreeItemCollapsibleState.Expanded) {
+        const dependencies = await this.getChildren(packageFile);
+        allDependencies.push(...dependencies);
+        
+        // Process potential nested dependencies (e.g., dependency categories)
+        for (const dependency of dependencies) {
+          if (dependency.collapsibleState === vscode.TreeItemCollapsibleState.Collapsed || 
+              dependency.collapsibleState === vscode.TreeItemCollapsibleState.Expanded) {
+            const nestedDependencies = await this.getChildren(dependency);
+            allDependencies.push(...nestedDependencies);
+          }
+        }
+      }
+    }
+    
+    return allDependencies;
+  }
 } 

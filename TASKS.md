@@ -40,11 +40,11 @@ This file tracks completed and planned tasks for the pkg-version extension.
 # Features
 
 ### Security Vulnerability Checking
-- [ ] Research Snyk API integration options
-- [ ] Implement Snyk API client
-- [ ] Add vulnerability scanning functionality
-- [ ] Design and implement vulnerability indicator UI
-- [ ] Add configuration options for vulnerability checks
+- [x] Research Snyk API integration options
+- [x] Implement Snyk API client
+- [x] Add vulnerability scanning functionality
+- [x] Design and implement vulnerability indicator UI
+- [x] Add configuration options for vulnerability checks
 
 ### Dependency Management Improvements
 - [x] Implement separation of dependencies from dev-dependencies in the UI
@@ -81,7 +81,7 @@ This file tracks completed and planned tasks for the pkg-version extension.
 3. ~~Add custom pattern exclusion for more granular control~~ (Completed in v1.0.7)
 4. Implement separation of dependencies from dev-dependencies
 5. Add package removal functionality
-6. Implement security vulnerability checking
+6. ~~Implement security vulnerability checking~~ (Completed in v2.0.0)
 7. Add package info on hover
 8. Add deprecated packages indicator
 9. Implement remaining features 
