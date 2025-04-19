@@ -14,6 +14,7 @@ This file tracks completed and planned tasks for the pkg-version extension.
 - [x] Update CHANGELOG.md with refactoring details
 - [x] Improve options menu UI with intuitive icons and better organization
 - [x] Fix dependency bundling issue with axios module in packaged extension
+- [x] Update itemName in readme.md
 
 ## Planned Tasks
 

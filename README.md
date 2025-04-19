@@ -1,7 +1,7 @@
 # Package Version Checker
 
-[![VS Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/pkg-version.svg)](https://marketplace.visualstudio.com/items?itemName=pkg-version)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/pkg-version.svg)](https://marketplace.visualstudio.com/items?itemName=pkg-version)
+[![VS Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/pkg-version.svg)](https://marketplace.visualstudio.com/items?itemName=Abdullah-Dev.pkg-version)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/pkg-version.svg)](https://marketplace.visualstudio.com/items?itemName=Abdullah-Dev.pkg-version)
 
 A VS Code extension for checking and updating package dependencies across multiple package managers.
 
