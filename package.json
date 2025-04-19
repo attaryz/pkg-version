@@ -2,7 +2,7 @@
   "name": "pkg-version",
   "displayName": "Package Version Checker",
   "description": "Checks package versions in common manifest files (package.json, composer.json, requirements.txt, pubspec.yaml) for updates.",
-  "version": "1.0.10",
+  "version": "2.0.0",
   "publisher": "Abdullah-Dev",
   "repository": {
     "type": "git",
