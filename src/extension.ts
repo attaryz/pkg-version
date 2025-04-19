@@ -1,8 +1,11 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
-import * as vscode from "vscode"
-import { DependencyProvider } from "./dependencyProvider" // Import the provider
-import * as path from "path"
+import * as vscode from "vscode";
+import { DependencyProvider } from "./dependencyProvider"; // Import the provider
+import * as path from "path";
+
+// Status bar item to display dependency statistics
+let dependencyStatusBarItem: vscode.StatusBarItem;
 
 /**
  * Ensures that default exclusion settings are properly applied to prevent
@@ -12,15 +15,25 @@ import * as path from "path"
 async function ensureDefaultExclusions() {
   const config = vscode.workspace.getConfiguration("pkgVersion");
   const currentExclusions: string[] = config.get("excludeFolders") || [];
-  
+
   // Basic default exclusions that should always be present
   const requiredExclusions = [
     "**/node_modules/**",
     "**/vendor/**/vendor/**", // Only exclude nested vendor folders
     "**/venv/**",
-    "**/.git/**"
+    "**/.git/**",
+    // Add lock files and similar files
+    "**/*.lock", // Excludes package-lock.json, composer.lock, yarn.lock, etc.
+    "**/yarn-error.log",
+    "**/package-lock.json",
+    "**/npm-debug.log",
+    "**/composer.lock",
+    "**/Gemfile.lock",
+    "**/Cargo.lock",
+    "**/*.bak",
+    "**/*.backup"
   ];
-  
+
   // Check if any required exclusions are missing
   let needsUpdate = false;
   for (const exclusion of requiredExclusions) {
@@ -29,7 +42,7 @@ async function ensureDefaultExclusions() {
       needsUpdate = true;
     }
   }
-  
+
   // Check if we need to update the old vendor exclusion to the new pattern
   const oldVendorExclusion = "**/vendor/**";
   const indexOfOldVendor = currentExclusions.indexOf(oldVendorExclusion);
@@ -38,24 +51,38 @@ async function ensureDefaultExclusions() {
     currentExclusions[indexOfOldVendor] = "**/vendor/**/vendor/**";
     needsUpdate = true;
   }
-  
+
   // Update the configuration if needed
   if (needsUpdate) {
-    await config.update("excludeFolders", currentExclusions, vscode.ConfigurationTarget.Global);
-    console.log("Updated default exclusions to ensure nested vendor folders and other critical folders are excluded");
+    await config.update(
+      "excludeFolders",
+      currentExclusions,
+      vscode.ConfigurationTarget.Global
+    );
+    console.log(
+      "Updated default exclusions to ensure nested vendor folders, lock files, and other critical files are excluded"
+    );
   }
-  
+
   // Ensure scanVendorDirectory is set to true by default
   const scanVendorDirectory = config.get("scanVendorDirectory");
   if (scanVendorDirectory === undefined) {
-    await config.update("scanVendorDirectory", true, vscode.ConfigurationTarget.Global);
+    await config.update(
+      "scanVendorDirectory",
+      true,
+      vscode.ConfigurationTarget.Global
+    );
     console.log("Set scanVendorDirectory to true by default");
   }
-  
+
   // Ensure composerPackageDetection is set to "auto" by default
   const composerPackageDetection = config.get("composerPackageDetection");
   if (composerPackageDetection === undefined) {
-    await config.update("composerPackageDetection", "auto", vscode.ConfigurationTarget.Global);
+    await config.update(
+      "composerPackageDetection",
+      "auto",
+      vscode.ConfigurationTarget.Global
+    );
     console.log("Set composerPackageDetection to 'auto' by default");
   }
 }
@@ -63,67 +90,91 @@ async function ensureDefaultExclusions() {
 /**
  * Activates the extension and registers all commands and providers.
  * Sets up the dependency tree view and related functionality.
- * 
+ *
  * @param {vscode.ExtensionContext} context - The extension context provided by VS Code
  */
-function activate(context: vscode.ExtensionContext) {
+export function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
   // This line of code will only be executed once when your extension is activated
-  console.log('Congratulations, your extension "pkg-version" is now active!')
-  
+  console.log('Congratulations, your extension "pkg-version" is now active!');
+
+  // Create status bar item
+  dependencyStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  dependencyStatusBarItem.command = "pkg-version.refreshDependencies";
+  dependencyStatusBarItem.tooltip = "Package Version Status - Click to refresh";
+  context.subscriptions.push(dependencyStatusBarItem);
+
   // Ensure default exclusions are set
   ensureDefaultExclusions().then(() => {
     console.log("Default exclusions verified");
   });
 
+  // Declare disposable variable at the top
+  let disposable: vscode.Disposable;
+
   // Register the checkUpdates command defined in package.json
-  let disposable = vscode.commands.registerCommand(
+  disposable = vscode.commands.registerCommand(
     "pkg-version.checkUpdates",
     function () {
-      vscode.window.showInformationMessage("Checking for package updates!")
+      vscode.window.showInformationMessage("Checking for package updates!");
       // TODO: Implement full package update check functionality
       // This should scan all package files and report outdated dependencies
     }
-  )
+  );
 
-  context.subscriptions.push(disposable)
+  context.subscriptions.push(disposable);
 
   // Get workspace root path for the provider
   const rootPath =
     vscode.workspace.workspaceFolders &&
     vscode.workspace.workspaceFolders.length > 0
       ? vscode.workspace.workspaceFolders[0].uri.fsPath
-      : undefined
-  
+      : undefined;
+
   // Register the TreeView provider
-  const dependencyProvider = new DependencyProvider(rootPath)
-  vscode.window.registerTreeDataProvider(
-    "packageDependencies",
-    dependencyProvider
-  )
+  const dependencyProvider = new DependencyProvider(rootPath);
+  
+  // Set up dependency status counter update
+  dependencyProvider.onDidChangeTreeData(() => {
+    updateDependencyStatusCounter(dependencyProvider);
+  });
+  
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider(
+      "packageDependencies", // This must match the view id in package.json
+      dependencyProvider
+    )
+  );
 
   // Register refresh command for the dependency tree view
   disposable = vscode.commands.registerCommand(
-    "pkg-version.refreshDependencies", 
-    () => dependencyProvider.refresh()
+    "pkg-version.refreshDependencies",
+    () => {
+      console.log("Refresh dependencies command executed");
+      dependencyProvider.refresh();
+      vscode.window.showInformationMessage("Dependencies refreshed!");
+      // Status counter will be updated via the onDidChangeTreeData event
+    }
   );
   context.subscriptions.push(disposable);
-  
+
   // Register update package command
   disposable = vscode.commands.registerCommand(
     "pkg-version.updatePackage",
     async (dependency) => {
       // If dependency is not provided, it means the command was not triggered from a tree item
       if (!dependency) {
-        vscode.window.showErrorMessage("Please select a package to update from the dependencies view");
+        vscode.window.showErrorMessage(
+          "Please select a package to update from the dependencies view"
+        );
         return;
       }
-      
+
       await dependencyProvider.updatePackage(dependency);
     }
   );
   context.subscriptions.push(disposable);
-  
+
   // Register update all packages command
   disposable = vscode.commands.registerCommand(
     "pkg-version.updateAllPackages",
@@ -132,49 +183,55 @@ function activate(context: vscode.ExtensionContext) {
       const choice = await vscode.window.showQuickPick(
         ["Yes, update all packages", "No, cancel"],
         {
-          placeHolder: "This will update all outdated packages. Are you sure you want to continue?",
-          canPickMany: false
+          placeHolder:
+            "This will update all outdated packages. Are you sure you want to continue?",
+          canPickMany: false,
         }
       );
-      
+
       if (choice !== "Yes, update all packages") {
         return;
       }
 
       // Get all outdated dependencies from the provider
-      const allDependencies = await dependencyProvider.getAllOutdatedDependencies();
-      
+      const allDependencies =
+        await dependencyProvider.getAllOutdatedDependencies();
+
       if (allDependencies.length === 0) {
         vscode.window.showInformationMessage("No outdated packages found.");
         return;
       }
-      
+
       // Show progress indicator
       vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
           title: "Updating packages",
-          cancellable: true
+          cancellable: true,
         },
         async (progress, token) => {
           let successCount = 0;
           let failCount = 0;
-          
+
           // Calculate increment step for progress bar
           const incrementStep = 100 / allDependencies.length;
-          
+
           for (let i = 0; i < allDependencies.length; i++) {
             if (token.isCancellationRequested) {
-              vscode.window.showInformationMessage("Package update operation cancelled.");
+              vscode.window.showInformationMessage(
+                "Package update operation cancelled."
+              );
               break;
             }
-            
+
             const dependency = allDependencies[i];
-            progress.report({ 
-              message: `Updating ${dependency.label} (${i + 1}/${allDependencies.length})`,
-              increment: incrementStep 
+            progress.report({
+              message: `Updating ${dependency.label} (${i + 1}/${
+                allDependencies.length
+              })`,
+              increment: incrementStep,
             });
-            
+
             const success = await dependencyProvider.updatePackage(dependency);
             if (success) {
               successCount++;
@@ -182,13 +239,13 @@ function activate(context: vscode.ExtensionContext) {
               failCount++;
             }
           }
-          
+
           if (successCount > 0 || failCount > 0) {
             vscode.window.showInformationMessage(
               `Update complete. ${successCount} package(s) updated successfully. ${failCount} package(s) failed.`
             );
           }
-          
+
           // Refresh the view to show updated status
           dependencyProvider.refresh();
         }
@@ -196,7 +253,7 @@ function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(disposable);
-  
+
   /**
    * Command to exclude a folder from dependency scanning.
    * Users can exclude folders that contain many package files but aren't relevant
@@ -204,132 +261,212 @@ function activate(context: vscode.ExtensionContext) {
    */
   disposable = vscode.commands.registerCommand(
     "pkg-version.excludeFolder",
-    async (folder: vscode.Uri) => {
-      if (!folder) {
-        // If no folder is provided via context menu, show folder picker
-        const folderUris = await vscode.window.showOpenDialog({
-          canSelectFiles: false,
-          canSelectFolders: true,
-          canSelectMany: false,
-          openLabel: "Select Folder to Exclude"
-        });
-        
-        if (!folderUris || folderUris.length === 0) {
-          return;
+    async () => {
+      // Ask for a folder to exclude
+      const folders = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        canSelectFiles: false,
+        canSelectFolders: true,
+        openLabel: "Select Folder to Exclude",
+      });
+
+      if (!folders || folders.length === 0) {
+        return;
+      }
+
+      const folder = folders[0];
+      const config = vscode.workspace.getConfiguration("pkgVersion");
+      const excludeFolders: string[] = config.get("excludeFolders") || [];
+
+      // Get the folder path relative to the workspace if possible
+      let folderPath = folder.fsPath;
+      if (vscode.workspace.workspaceFolders) {
+        for (const workspace of vscode.workspace.workspaceFolders) {
+          if (folderPath.startsWith(workspace.uri.fsPath)) {
+            folderPath = folderPath.substring(workspace.uri.fsPath.length);
+            break;
+          }
         }
-        folder = folderUris[0];
       }
-      
-      const configuration = vscode.workspace.getConfiguration("pkgVersion");
-      const excludeFolders: string[] = configuration.get("excludeFolders") || [];
-      
-      // Construct a glob pattern for the selected folder relative to workspace
-      let relativePath: string;
-      if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-        const workspaceFolder = vscode.workspace.workspaceFolders[0];
-        relativePath = path.relative(workspaceFolder.uri.fsPath, folder.fsPath);
-        relativePath = relativePath.replace(/\\/g, '/'); // Normalize path for glob pattern
+
+      // Convert to glob pattern for matching
+      folderPath = folderPath.replace(/\\/g, "/"); // Normalize slashes
+      if (folderPath.startsWith("/")) {
+        folderPath = folderPath.substring(1); // Remove leading slash
+      }
+      const globPattern = `**/${folderPath}/**`;
+
+      // Add to exclusion list if not already there
+      if (!excludeFolders.includes(globPattern)) {
+        excludeFolders.push(globPattern);
+        await config.update(
+          "excludeFolders",
+          excludeFolders,
+          vscode.ConfigurationTarget.Global
+        );
+        vscode.window.showInformationMessage(
+          `Added "${folderPath}" to the excluded folders list`
+        );
+        
+        // Refresh the tree view to apply the new exclusion
+        dependencyProvider.refresh();
       } else {
-        relativePath = folder.fsPath;
+        vscode.window.showInformationMessage(
+          `"${folderPath}" is already in the excluded folders list`
+        );
       }
+    }
+  );
+  context.subscriptions.push(disposable);
+  
+  /**
+   * Command to show excluded folders and allow removing them.
+   * This makes it easier for users to manage their exclusion list.
+   */
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.manageExclusions",
+    async () => {
+      const config = vscode.workspace.getConfiguration("pkgVersion");
+      const excludeFolders: string[] = config.get("excludeFolders") || [];
       
-      // Create a glob pattern that excludes the folder and all its contents
-      const globPattern = `**/${relativePath}/**`;
-      
-      // Check if already excluded
-      if (excludeFolders.includes(globPattern)) {
-        vscode.window.showInformationMessage(`Folder '${relativePath}' is already excluded.`);
+      if (excludeFolders.length === 0) {
+        vscode.window.showInformationMessage("No folders are currently excluded");
         return;
       }
       
-      // Add the new exclude pattern
-      excludeFolders.push(globPattern);
+      // Show the excluded folders with options to remove
+      const selectedFolder = await vscode.window.showQuickPick(
+        [
+          { label: "Keep all exclusions", description: "Don't remove any folders" },
+          ...excludeFolders.map(folder => ({ 
+            label: `Remove: ${folder}`, 
+            folder 
+          }))
+        ],
+        {
+          placeHolder: "Select an exclusion to remove or 'Keep all exclusions'",
+        }
+      );
       
-      // Update configuration
-      await configuration.update("excludeFolders", excludeFolders, vscode.ConfigurationTarget.Workspace);
-      vscode.window.showInformationMessage(`Folder '${relativePath}' excluded from package checks.`);
+      if (!selectedFolder || selectedFolder.label === "Keep all exclusions") {
+        return;
+      }
       
-      // Refresh the tree view
+      // Remove the selected folder from the exclusion list
+      const folderToRemove = (selectedFolder as any).folder;
+      const updatedExclusions = excludeFolders.filter(f => f !== folderToRemove);
+      
+      await config.update(
+        "excludeFolders",
+        updatedExclusions,
+        vscode.ConfigurationTarget.Global
+      );
+      
+      vscode.window.showInformationMessage(
+        `Removed "${folderToRemove}" from excluded folders`
+      );
+      
+      // Refresh the tree view to apply the updated exclusions
       dependencyProvider.refresh();
     }
   );
   context.subscriptions.push(disposable);
   
   /**
-   * Command to manage folder exclusions by displaying a list of currently
-   * excluded folders and allowing users to remove them.
+   * Command to exclude specific files or deeper folder structures using custom glob patterns.
+   * This provides more granular control than the folder exclusion command.
    */
   disposable = vscode.commands.registerCommand(
-    "pkg-version.manageExclusions",
+    "pkg-version.excludeCustomPattern",
     async () => {
-      const configuration = vscode.workspace.getConfiguration("pkgVersion");
-      const excludeFolders: string[] = configuration.get("excludeFolders") || [];
-      
-      // Create quick pick items for each excluded folder
-      const quickPickItems = excludeFolders.map(folder => ({
-        label: folder,
-        description: "Remove this exclusion"
-      }));
-      
-      if (quickPickItems.length === 0) {
-        vscode.window.showInformationMessage("No folders are currently excluded.");
-        return;
-      }
-      
-      // Show quick pick to select which exclusion to remove
-      const selected = await vscode.window.showQuickPick(quickPickItems, {
-        placeHolder: "Select a folder exclusion to remove",
-        canPickMany: true
+      // Prompt user for custom glob pattern
+      const pattern = await vscode.window.showInputBox({
+        prompt: "Enter a glob pattern for exclusion",
+        placeHolder: "e.g., **/specific/path/to/exclude/** or **/*.specific.json",
+        value: "**/",
+        validateInput: (value) => {
+          if (!value || value.trim().length === 0) {
+            return "Pattern cannot be empty";
+          }
+          return null;
+        }
       });
-      
-      if (!selected || selected.length === 0) {
-        return;
+
+      if (!pattern) {
+        return; // User cancelled
       }
-      
-      // Remove selected exclusions
-      const selectedPaths = selected.map(item => item.label);
-      const newExcludeFolders = excludeFolders.filter(folder => !selectedPaths.includes(folder));
-      
-      // Update configuration
-      await configuration.update("excludeFolders", newExcludeFolders, vscode.ConfigurationTarget.Workspace);
-      vscode.window.showInformationMessage(`Removed ${selected.length} folder exclusion(s).`);
-      
-      // Refresh the tree view
-      dependencyProvider.refresh();
+
+      const config = vscode.workspace.getConfiguration("pkgVersion");
+      const excludeFolders: string[] = config.get("excludeFolders") || [];
+
+      // Add to exclusion list if not already there
+      if (!excludeFolders.includes(pattern)) {
+        excludeFolders.push(pattern);
+        await config.update(
+          "excludeFolders",
+          excludeFolders,
+          vscode.ConfigurationTarget.Global
+        );
+        vscode.window.showInformationMessage(
+          `Added "${pattern}" to the excluded patterns list`
+        );
+        
+        // Refresh the tree view to apply the new exclusion
+        dependencyProvider.refresh();
+      } else {
+        vscode.window.showInformationMessage(
+          `"${pattern}" is already in the excluded patterns list`
+        );
+      }
     }
   );
   context.subscriptions.push(disposable);
+  
+  // Initial update of dependency counter in the status bar
+  updateDependencyStatusCounter(dependencyProvider);
+}
 
-  // Listen for configuration changes
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration(e => {
-      if (
-        e.affectsConfiguration('pkgVersion.excludeFolders') ||
-        e.affectsConfiguration('pkgVersion.scanVendorDirectory') ||
-        e.affectsConfiguration('pkgVersion.composerPackageDetection')
-      ) {
-        console.log("Package Version configuration changed, refreshing dependencies view");
-        dependencyProvider.refresh();
-      }
-    })
-  );
-
-  // TODO: Add support for multi-root workspaces
-  // Current implementation only checks the first workspace folder
-
-  // TODO: Add notification system for outdated dependencies
-  // Consider implementing a status bar item to show outdated packages count
+/**
+ * Updates the status bar counter displaying total dependencies and 
+ * how many updates are available.
+ * 
+ * @param provider The dependency provider to get dependency information from
+ */
+async function updateDependencyStatusCounter(provider: DependencyProvider) {
+  try {
+    // Get all outdated dependencies
+    const outdatedDeps = await provider.getAllOutdatedDependencies();
+    
+    if (outdatedDeps.length > 0) {
+      // Show count of outdated dependencies with icon
+      dependencyStatusBarItem.text = `$(arrow-up) ${outdatedDeps.length} updates available`;
+      dependencyStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
+      dependencyStatusBarItem.show();
+    } else {
+      // Check if we have any dependencies at all
+      // This is a simplified check that doesn't count all dependencies
+      // A more thorough check would require scanning all package files
+      dependencyStatusBarItem.text = `$(check) Dependencies up to date`;
+      dependencyStatusBarItem.backgroundColor = undefined;
+      dependencyStatusBarItem.show();
+    }
+  } catch (error) {
+    console.error("Error updating dependency status bar:", error);
+    // In case of error, hide the status bar item to avoid showing incorrect information
+    dependencyStatusBarItem.hide();
+  }
 }
 
 /**
  * Called when the extension is deactivated.
- * Currently no cleanup needed, but this could change in future versions.
+ * Use this to clean up any resources the extension has allocated.
  */
-function deactivate() {
-  // TODO: Add cleanup logic if needed in the future
+export function deactivate() {
+  // Nothing to clean up at this time
+  console.log("pkg-version extension deactivated");
 }
 
 module.exports = {
   activate,
   deactivate,
-}
+};

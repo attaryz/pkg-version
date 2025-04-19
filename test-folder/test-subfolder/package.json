@@ -2,7 +2,7 @@
   "name": "pkg-version",
   "displayName": "Package Version Checker",
   "description": "Checks package versions in common manifest files (package.json, composer.json, requirements.txt, pubspec.yaml) for updates.",
-  "version": "1.0.9",
+  "version": "1.0.5",
   "publisher": "Abdullah-Dev",
   "repository": {
     "type": "git",
@@ -28,8 +28,7 @@
     "commands": [
       {
         "command": "pkg-version.checkUpdates",
-        "title": "Check for Package Updates",
-        "icon": "$(search)"
+        "title": "Check for Package Updates"
       },
       {
         "command": "pkg-version.refreshDependencies",
@@ -38,28 +37,19 @@
       },
       {
         "command": "pkg-version.excludeFolder",
-        "title": "Exclude Folder from Package Checks",
-        "icon": "$(exclude)"
-      },
-      {
-        "command": "pkg-version.excludeCustomPattern",
-        "title": "Exclude Pattern",
-        "icon": "$(exclude)"
+        "title": "Exclude Folder from Package Checks"
       },
       {
         "command": "pkg-version.manageExclusions",
-        "title": "Manage Exclusions",
-        "icon": "$(gear)"
+        "title": "Manage Folder Exclusions"
       },
       {
         "command": "pkg-version.updatePackage",
-        "title": "Update Package",
-        "icon": "$(arrow-up)"
+        "title": "Update Package"
       },
       {
         "command": "pkg-version.updateAllPackages",
-        "title": "Update All Packages",
-        "icon": "$(sync)"
+        "title": "Update All Packages"
       }
     ],
     "menus": {
@@ -67,34 +57,24 @@
         {
           "command": "pkg-version.refreshDependencies",
           "when": "view == packageDependencies",
-          "group": "navigation@0",
-          "icon": "$(refresh)"
-        },
-        {
-          "command": "pkg-version.updateAllPackages",
-          "when": "view == packageDependencies",
-          "group": "1_updates@1",
-          "icon": "$(arrow-up)"
+          "group": "navigation"
         },
         {
           "command": "pkg-version.manageExclusions",
           "when": "view == packageDependencies",
-          "group": "2_configuration@1",
-          "icon": "$(gear)"
+          "group": "navigation@1"
         },
         {
-          "command": "pkg-version.excludeCustomPattern",
+          "command": "pkg-version.updateAllPackages",
           "when": "view == packageDependencies",
-          "group": "2_configuration@2",
-          "icon": "$(exclude)"
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
         {
           "command": "pkg-version.updatePackage",
           "when": "view == packageDependencies && viewItem == dependency",
-          "group": "inline",
-          "icon": "$(arrow-up)"
+          "group": "inline"
         }
       ],
       "explorer/context": [
@@ -164,17 +144,14 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run esbuild-base -- --minify",
-    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
-    "esbuild": "npm run esbuild-base -- --sourcemap",
-    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
+    "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint .",
     "pretest": "npm run compile && npm run lint",
     "test": "node ./test/runTest.js",
     "publish": "npx @vscode/vsce publish",
-    "package": "npm run esbuild-base -- --minify && npx @vscode/vsce package"
+    "package": "npx @vscode/vsce package"
   },
   "dependencies": {
     "axios": "^1.8.4",
@@ -188,7 +165,6 @@
     "@types/semver": "^7.7.0",
     "@types/vscode": "^1.80.0",
     "@vscode/test-electron": "^2.3.3",
-    "esbuild": "^0.25.2",
     "eslint": "^8.44.0",
     "glob": "^10.3.3",
     "js-yaml": "^4.1.0",

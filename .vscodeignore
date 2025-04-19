@@ -1,7 +1,9 @@
 .vscode/**
 .gitignore
 node_modules/**
-out/**
 npm-debug.log*
 *.vsix
 .DS_Store
+extra/**
+.cursor/**
+pkg-version-*.vsix

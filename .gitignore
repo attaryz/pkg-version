@@ -53,3 +53,5 @@ out/
 .cache
 .vscode
 out/
+extra/
+.cursor/* 
