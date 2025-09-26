@@ -758,8 +758,3 @@ export function deactivate() {
   // Nothing to clean up at this time
   console.log("pkg-version extension deactivated");
 }
-
-module.exports = {
-  activate,
-  deactivate,
-};
