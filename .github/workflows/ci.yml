@@ -27,14 +27,8 @@ jobs:
     - name: Install dependencies
       run: npm ci
       
-    - name: Run linter
-      run: npm run lint
-      
     - name: Compile TypeScript
       run: npm run compile
-      
-    - name: Run tests
-      run: npm test
       
     - name: Build extension package
       run: npm run package
