@@ -13,11 +13,16 @@ A VS Code extension for checking and updating package dependencies across multip
   * npm (Node.js)
   * Composer (PHP)
   * PyPI (Python)
+  * Poetry (Python)
   * Pub.dev (Dart/Flutter)
 * Visual indicators showing update status (major, minor, patch)
 * One-click dependency updates
 * Bulk update capabilities
 * Status bar notification of available updates
+* File Information View:
+  * Runtime and language information for the selected file
+  * Package manager details for manifest files
+  * Automatic updates when switching between files
 * Security vulnerability scanning:
   * Integration with Snyk API for vulnerability detection
   * Visual indicators for vulnerable packages
@@ -26,6 +31,11 @@ A VS Code extension for checking and updating package dependencies across multip
   * Folder exclusion for large projects
   * Custom pattern exclusion for granular control
   * Automatic exclusion of lock files (package-lock.json, composer.lock, etc.)
+* Package Management Context Menu:
+  * Right-click on dependencies to see available actions
+  * Remove packages directly from the tree view
+  * View detailed package information in a webview panel
+  * Update packages with a single click
 * Improved user interface:
   * Enhanced options menu with intuitive icons
   * Organized command grouping for better usability
@@ -47,11 +57,13 @@ src/
 │   ├── npmParser.ts             # package.json parser
 │   ├── composerParser.ts        # composer.json parser
 │   ├── pythonParser.ts          # requirements.txt parser
+│   ├── poetryParser.ts          # pyproject.toml parser
 │   └── dartParser.ts            # pubspec.yaml parser
 ├── updaters/
 │   ├── npmUpdater.ts            # npm package updater
 │   ├── composerUpdater.ts       # composer package updater
 │   ├── pythonUpdater.ts         # python package updater
+│   ├── poetryUpdater.ts         # poetry package updater
 │   └── dartUpdater.ts           # dart package updater
 ├── dependencyProvider.ts        # TreeView data provider
 └── extension.ts                 # Extension entry point
@@ -119,6 +131,22 @@ To add support for a new package manager:
 1. To update an individual package, click the update icon next to it
 2. To update all packages, click the update icon in the view's title bar
 3. The extension will perform the update and show the results
+4. You can also right-click on any package in the tree view and select "Update Package"
+
+### Managing Packages via Context Menu
+
+1. Right-click on any package in the tree view to access the context menu
+2. Available options include:
+   * Update Package: Update the package to its latest version
+   * Remove Package: Remove the package from its parent manifest file
+   * View Package Info: Open a detailed information panel about the package
+3. Package info view includes:
+   * Package logo or icon (when available)
+   * Version information (current and latest)
+   * Description, license, and author
+   * Homepage and repository links
+   * Dependencies of the selected package
+   * Last published date and other metadata
 
 ### Security Vulnerability Scanning
 
@@ -136,6 +164,18 @@ To add support for a new package manager:
 2. To add custom exclusion patterns, click the gear icon in the view's title bar
 3. Manage exclusions from the extension settings
 
+### Using the File Info View
+
+1. Open the "PACKAGE VERSIONS" view in the sidebar
+2. Select the "File Info" tab
+3. Open any file in the editor to see its information
+4. For manifest files (package.json, composer.json, etc.), you'll see:
+   - Runtime information (Node.js, PHP, Python, etc.)
+   - Language information
+   - Package manager details
+5. For other files, you'll see basic file type and language information
+6. The view updates automatically when you switch between files
+
 ### Commands
 
 The extension provides several commands that can be accessed via the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`):
@@ -144,6 +184,7 @@ The extension provides several commands that can be accessed via the Command Pal
 - **Refresh Dependencies**: Refresh the dependencies tree view
 - **Update Package**: Update a selected package to the latest version
 - **Update All Packages**: Update all outdated packages at once
+- **Generate requirements.txt from Poetry**: Convert Poetry dependencies to requirements.txt format
 - **Exclude Folder**: Exclude a folder from dependency scanning
 - **Exclude Custom Pattern**: Exclude specific files or nested directories using glob patterns
 - **Manage Exclusions**: View and remove folder exclusions
@@ -156,12 +197,13 @@ This extension contributes the following settings:
 
 ## Supported Package Managers
 
-| Package Manager | File | Registry |
-|----------------|------|----------|
-| npm/yarn | package.json | npm registry |
-| Composer | composer.json | Packagist |
-| Python | requirements.txt | PyPI |
-| Dart/Flutter | pubspec.yaml | pub.dev |
+| Package Manager | File | Registry | Requirements |
+|----------------|------|----------|------------|
+| npm/yarn | package.json | npm registry | Node.js installed |
+| Composer | composer.json | Packagist | PHP and Composer CLI installed and in PATH |
+| Python | requirements.txt | PyPI | Python installed |
+| Poetry | pyproject.toml | PyPI | Python and Poetry installed |
+| Dart/Flutter | pubspec.yaml | pub.dev | Dart/Flutter SDK installed |
 
 ## Features in Detail
 
@@ -197,10 +239,49 @@ If your workspace contains multiple package files of the same type, the extensio
 - Package info hover cards
 - See [TASKS.md](TASKS.md) for more planned features and their implementation status
 
+## Development & CI/CD
+
+### GitHub Actions Workflows
+
+This project includes automated workflows for continuous integration and deployment:
+
+#### CI Workflow (`.github/workflows/ci.yml`)
+- Runs on every push and pull request to main branches
+- Tests across multiple Node.js versions (16, 18, 20)
+- Performs linting, compilation, and testing
+- Builds extension package for verification
+- Uploads build artifacts for review
+
+#### Build & Publish Workflow (`.github/workflows/build-and-publish.yml`)
+- Triggers on version tags (e.g., `v2.1.0`) or manual dispatch
+- Builds and packages the extension
+- Publishes to VS Code Marketplace
+- Publishes to OpenVSX Registry
+- Creates GitHub releases with downloadable `.vsix` files
+- Uploads extension artifacts for download
+
+### Publishing a New Version
+
+1. **Automatic (Recommended)**: Create and push a version tag:
+   ```bash
+   git tag v2.1.1
+   git push origin v2.1.1
+   ```
+
+2. **Manual**: Use the "Build and Publish" workflow dispatch in GitHub Actions with a version number.
+
+### Setup Requirements
+
+To use the publishing workflow, configure these repository secrets:
+- `VSCE_PAT`: Personal Access Token for VS Code Marketplace publishing
+- `OVSX_PAT`: Personal Access Token for OpenVSX Registry publishing
+
+For detailed setup instructions, see [`.github/SETUP.md`](.github/SETUP.md).
+
 ## Contributing
 
 Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## License
 
-[MIT](LICENSE) 
+[MIT](LICENSE)

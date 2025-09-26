@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { Dependency } from "../models/dependency";
 import { getExcludePattern } from "../utils/fileUtils";
+import { isComposerAvailable, showComposerNotAvailableMessage } from "../utils/composerUtils";
 
 /**
  * Updates a Composer package in composer.json.
@@ -11,6 +12,16 @@ import { getExcludePattern } from "../utils/fileUtils";
 export async function updateComposerPackage(
   dependency: Dependency
 ): Promise<boolean> {
+  // First check if Composer is available
+  const composerAvailable = await isComposerAvailable();
+  if (!composerAvailable) {
+    showComposerNotAvailableMessage();
+    vscode.window.showErrorMessage(
+      "Cannot update Composer package: Composer is not installed or not in PATH"
+    );
+    return false;
+  }
+
   if (!dependency.latestVersion) {
     vscode.window.showErrorMessage(
       "Cannot update this package: missing latest version information"

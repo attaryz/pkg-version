@@ -4,6 +4,10 @@ import { Dependency } from "../models/dependency";
 import { fetchLatestPackagistVersion } from "../utils/registryFetchers";
 import { getUpdateType } from "../utils/versionUtils";
 import { pathExists } from "../utils/fileUtils";
+import { isComposerAvailable, showComposerNotAvailableMessage } from "../utils/composerUtils";
+
+// Store a flag to ensure we only show the warning once per session
+let hasShownComposerWarning = false;
 
 /**
  * Parses a composer.json file and extracts all dependencies with their versions.
@@ -16,6 +20,16 @@ import { pathExists } from "../utils/fileUtils";
 export async function getDepsInComposerJson(
   composerJsonUri: vscode.Uri
 ): Promise<Dependency[]> {
+  // Check if Composer is available, but only warn once per session
+  if (!hasShownComposerWarning) {
+    const composerAvailable = await isComposerAvailable();
+    if (!composerAvailable) {
+      showComposerNotAvailableMessage();
+      hasShownComposerWarning = true;
+      console.warn("Composer not available, some functionality might be limited");
+    }
+  }
+
   if (!pathExists(composerJsonUri.fsPath)) {
     return Promise.resolve([]);
   }
@@ -108,6 +122,16 @@ export async function getDepsInComposerJson(
 export async function getDepsFromComposerLock(
   composerLockUri: vscode.Uri
 ): Promise<Dependency[]> {
+  // Check if Composer is available, but only warn once per session
+  if (!hasShownComposerWarning) {
+    const composerAvailable = await isComposerAvailable();
+    if (!composerAvailable) {
+      showComposerNotAvailableMessage();
+      hasShownComposerWarning = true;
+      console.warn("Composer not available, some functionality might be limited");
+    }
+  }
+
   if (!pathExists(composerLockUri.fsPath)) {
     return Promise.resolve([]);
   }
@@ -222,6 +246,16 @@ export async function getDepsFromComposerLock(
 export async function getDepsFromVendorDirectory(
   vendorDir: vscode.Uri
 ): Promise<Dependency[]> {
+  // Check if Composer is available, but only warn once per session
+  if (!hasShownComposerWarning) {
+    const composerAvailable = await isComposerAvailable();
+    if (!composerAvailable) {
+      showComposerNotAvailableMessage();
+      hasShownComposerWarning = true;
+      console.warn("Composer not available, some functionality might be limited");
+    }
+  }
+
   try {
     // First look for composer.lock file in the parent directory of vendor
     // This is typically where Composer places the vendor directory, and composer.lock has the most accurate info

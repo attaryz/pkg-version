@@ -15,6 +15,14 @@ This file tracks completed and planned tasks for the pkg-version extension.
 - [x] Improve options menu UI with intuitive icons and better organization
 - [x] Fix dependency bundling issue with axios module in packaged extension
 - [x] Update itemName in readme.md
+- [x] Add runtime, language info as a tree view for the selected file
+- [x] Add support for Python Poetry package manager
+- [x] Create Poetry parser for pyproject.toml files
+- [x] Create Poetry updater for pyproject.toml files
+- [x] Add requirements.txt generation feature from Poetry dependencies
+- [x] Integrate Poetry support into main extension and dependency provider
+- [x] Update package.json activation events to include pyproject.toml
+- [x] Update README, CHANGELOG, and TASKS.md with Poetry support
 
 ## Planned Tasks
 
@@ -29,17 +37,22 @@ This file tracks completed and planned tasks for the pkg-version extension.
 - [ ] Add unit tests for parsers
 - [ ] Add unit tests for version comparison utilities
 - [ ] Add integration tests for updaters
+- [ ] Find a new name for the extension
+- [ ] Create a logo
 
 ## Bugs/Issues to Address
 
+- [x] Add check for Composer availability before execution of Composer-related commands
 - [ ] Improve error handling for API rate limiting
 - [ ] Fix visual glitches in TreeView for deeply nested dependencies
 - [ ] Address performance issues with large repositories
 - [ ] Improve version constraint parsing for complex specifications
+- [ ] Handle if cannot check for runtime, package manager, language when running commands
 
 # Features
 
 ### Security Vulnerability Checking
+
 - [x] Research Snyk API integration options
 - [x] Implement Snyk API client
 - [x] Add vulnerability scanning functionality
@@ -47,6 +60,7 @@ This file tracks completed and planned tasks for the pkg-version extension.
 - [x] Add configuration options for vulnerability checks
 
 ### Dependency Management Improvements
+
 - [x] Implement separation of dependencies from dev-dependencies in the UI
 - [ ] Create functionality to remove packages
 - [ ] Add ability to lock or modify update constraints
@@ -54,28 +68,44 @@ This file tracks completed and planned tasks for the pkg-version extension.
 - [ ] Create hover card with package summary
 
 ### Package Information Display
+
 - [ ] Add option to display package info directly in VS Code
 - [ ] Implement detection and display of deprecated packages
 - [ ] Add runtime, package manager, and language info display
 - [x] Create status counter for dependencies
 - [ ] Research and implement alternatives suggestion system
+- [x] Add runtime, language info as a tree view for the selected file
+- [ ] Add check for runtime, language, package manager updates
+- [ ] Add ability to update runtime/language/package manager (open official page)
+- [ ] Update status indicators UI/logic
+- [x] Add context menu to package name in the tree view with options to remove the package, update it, and view its info
 
 ### Package Search and Installation
+
 - [ ] Design search interface for packages
 - [ ] Implement package search functionality
 - [ ] Add installation capability from search results
 - [ ] Create UI for installation progress
 
+### Manifest File Options
+
+- [ ] Add 'exclude file' option to manifest context menu
+- [ ] Add 'update all' option to manifest context menu
+- [ ] Add 'check for updates' option to manifest context menu
+
 ## Bugs
 
 ### Folder Exclusion
+
 - [x] Investigate why folder exclusion is not working
 - [x] Fix folder exclusion functionality
 - [x] Automatically exclude lock files and similar files
 - [x] Add support for custom pattern exclusion at deeper levels
 - [ ] Add tests for folder exclusion
+- [ ] Node version is not displayed
 
 ## Implementation Priority
+
 1. ~~Fix folder exclusion bug~~ (Completed in v1.0.6)
 2. ~~Add automatic exclusion for lock files~~ (Completed in v1.0.6)
 3. ~~Add custom pattern exclusion for more granular control~~ (Completed in v1.0.7)
@@ -84,4 +114,4 @@ This file tracks completed and planned tasks for the pkg-version extension.
 6. ~~Implement security vulnerability checking~~ (Completed in v2.0.0)
 7. Add package info on hover
 8. Add deprecated packages indicator
-9. Implement remaining features 
+9. Implement remaining features

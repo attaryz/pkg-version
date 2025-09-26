@@ -1,0 +1,82 @@
+name: Build and Publish VS Code Extension
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0, v2.1.0, etc.
+  workflow_dispatch:  # Allow manual triggering
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 2.1.1)'
+        required: true
+        type: string
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run tests
+      run: npm test
+      
+    - name: Install VSCE and OVSX
+      run: |
+        npm install -g @vscode/vsce
+        npm install -g ovsx
+      
+    - name: Update version (manual trigger)
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        npm version ${{ github.event.inputs.version }} --no-git-tag-version
+        
+    - name: Build and package extension
+      run: npm run package
+      
+    - name: Get package info
+      id: package
+      run: |
+        PACKAGE_VERSION=$(node -p "require('./package.json').version")
+        PACKAGE_NAME=$(node -p "require('./package.json').name")
+        echo "version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+        echo "name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+        echo "filename=$PACKAGE_NAME-$PACKAGE_VERSION.vsix" >> $GITHUB_OUTPUT
+        
+    - name: Publish to VS Code Marketplace
+      env:
+        VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      run: vsce publish --packagePath ./${{ steps.package.outputs.filename }}
+      
+    - name: Publish to OpenVSX Registry
+      env:
+        OVSX_PAT: ${{ secrets.OVSX_PAT }}
+      run: ovsx publish ./${{ steps.package.outputs.filename }} --pat $OVSX_PAT
+      
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: ./${{ steps.package.outputs.filename }}
+        generate_release_notes: true
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Upload extension as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.package.outputs.filename }}
+        path: ./${{ steps.package.outputs.filename }}
+        retention-days: 30

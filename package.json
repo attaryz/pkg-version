@@ -1,8 +1,8 @@
 {
   "name": "pkg-version",
   "displayName": "Package Version Checker",
-  "description": "Checks package versions in common manifest files (package.json, composer.json, requirements.txt, pubspec.yaml) for updates.",
-  "version": "2.0.0",
+  "description": "Checks package versions in common manifest files (package.json, composer.json, requirements.txt, pyproject.toml, pubspec.yaml) for updates.",
+  "version": "2.1.1",
   "publisher": "Abdullah-Dev",
   "repository": {
     "type": "git",
@@ -19,6 +19,7 @@
     "workspaceContains:**/composer.json",
     "workspaceContains:**/composer.lock",
     "workspaceContains:**/requirements.txt",
+    "workspaceContains:**/pyproject.toml",
     "workspaceContains:**/pubspec.yaml",
     "workspaceContains:**/vendor/*/composer.json",
     "workspaceContains:**/vendor/composer/installed.json"
@@ -65,6 +66,26 @@
         "command": "pkg-version.checkVulnerabilities",
         "title": "Check for Security Vulnerabilities",
         "icon": "$(shield)"
+      },
+      {
+        "command": "pkg-version.refreshFileInfo",
+        "title": "Refresh File Info",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pkg-version.removePackage",
+        "title": "Remove Package",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "pkg-version.viewPackageInfo",
+        "title": "View Package Info",
+        "icon": "$(info)"
+      },
+      {
+        "command": "pkg-version.generateRequirementsTxt",
+        "title": "Generate requirements.txt from Poetry",
+        "icon": "$(file-add)"
       }
     ],
     "menus": {
@@ -72,6 +93,12 @@
         {
           "command": "pkg-version.refreshDependencies",
           "when": "view == packageDependencies",
+          "group": "navigation@0",
+          "icon": "$(refresh)"
+        },
+        {
+          "command": "pkg-version.refreshFileInfo",
+          "when": "view == fileInfoView",
           "group": "navigation@0",
           "icon": "$(refresh)"
         },
@@ -98,6 +125,12 @@
           "when": "view == packageDependencies",
           "group": "2_configuration@2",
           "icon": "$(exclude)"
+        },
+        {
+          "command": "pkg-version.generateRequirementsTxt",
+          "when": "view == packageDependencies",
+          "group": "3_poetry@1",
+          "icon": "$(file-add)"
         }
       ],
       "view/item/context": [
@@ -106,6 +139,21 @@
           "when": "view == packageDependencies && viewItem == dependency",
           "group": "inline",
           "icon": "$(arrow-up)"
+        },
+        {
+          "command": "pkg-version.updatePackage",
+          "when": "view == packageDependencies && (viewItem == dependency || viewItem == package-dependency)",
+          "group": "1_modification"
+        },
+        {
+          "command": "pkg-version.removePackage",
+          "when": "view == packageDependencies && (viewItem == dependency || viewItem == package-dependency)",
+          "group": "1_modification"
+        },
+        {
+          "command": "pkg-version.viewPackageInfo",
+          "when": "view == packageDependencies && (viewItem == dependency || viewItem == package-dependency)",
+          "group": "2_information"
         }
       ],
       "explorer/context": [
@@ -131,6 +179,11 @@
           "id": "packageDependencies",
           "name": "Dependencies",
           "contextualTitle": "Package Dependencies"
+        },
+        {
+          "id": "fileInfoView",
+          "name": "File Info",
+          "contextualTitle": "Selected File Info"
         }
       ]
     },
@@ -199,6 +252,7 @@
   },
   "dependencies": {
     "axios": "^1.8.4",
+    "js-yaml": "^4.1.0",
     "semver": "^7.7.1"
   },
   "devDependencies": {
@@ -212,7 +266,6 @@
     "esbuild": "^0.25.2",
     "eslint": "^8.44.0",
     "glob": "^10.3.3",
-    "js-yaml": "^4.1.0",
     "mocha": "^10.2.0",
     "typescript": "^5.1.6"
   }

@@ -2,6 +2,96 @@
 
 All notable changes to the "pkg-version" extension will be documented in this file.
 
+## [2.1.1] - 2025-01-27
+
+### Added
+- Added GitHub Actions workflows for automated CI/CD
+- Added automated building and publishing to VS Code Marketplace
+- Added CI workflow for testing across multiple Node.js versions
+- Added automated GitHub releases with downloadable extension files
+- Added artifact uploads for extension builds
+
+### Fixed
+- Fixed logo URL display issue in package info view (removed debug text)
+- Improved package info webview display
+
+### Enhanced
+- Improved development workflow with automated testing and deployment
+- Added comprehensive documentation for CI/CD processes
+
+## [2.1.0] - 2025-01-27
+
+### Added
+- Added support for Python Poetry package manager
+- Added `pyproject.toml` file parsing for Poetry dependencies
+- Added Poetry package updating and removal functionality
+- Added command to generate `requirements.txt` from Poetry dependencies
+- Added Poetry to activation events for automatic extension loading
+
+### Enhanced
+- Extended dependency provider to support Poetry packages
+- Added Poetry-specific version constraint handling (^, ~, exact versions)
+- Integrated Poetry with existing security vulnerability scanning
+- Added Poetry to supported package managers documentation
+
+## [2.0.1] - 2025-04-22
+
+### Fixed
+- Fixed "Failed to check vulnerabilities" error when receiving HTTP 403 response from Snyk API
+- Improved error handling for Snyk API responses with specific error messages for different HTTP status codes
+- Enhanced vulnerability checking to properly handle API errors without showing false success results
+- Added more detailed error feedback for token permission issues
+- Fixed incorrect Snyk API URL from "https://snyk.io/api/v1" to "https://api.snyk.io/v1"
+
+## [2.2.4] - 2025-04-29
+
+### Fixed
+- Added check for Composer installation before trying to use Composer commands
+- Added helpful error message with installation instructions when Composer is not found
+- Improved error handling for systems without Composer installed
+- Fixed "'composer' is not recognized as an internal or external command" error
+
+## [2.2.3] - 2025-04-28
+
+### Fixed
+- Fixed package logo display issues in the package info view
+- Improved image loading with proper Content-Security-Policy
+- Added reliable fallback to generated avatars when logos aren't available
+- Implemented better error handling for image loading
+- Added diagnostic information to help troubleshoot logo display issues
+
+## [2.2.2] - 2025-04-27
+
+### Added
+- Added package logo display in the package info view
+- Implemented logo fetching from various package repositories (npm, PyPI, etc.)
+- Added fallback initials display when package logo is unavailable
+
+## [2.2.1] - 2025-04-26
+
+### Fixed
+- Fixed "command 'pkg-version.viewPackageInfo' not found" error by properly including js-yaml in main dependencies
+- Improved build configuration to ensure all dependencies are correctly bundled
+
+## [2.2.0] - 2025-04-25
+
+### Added
+- Added context menu to package names in the tree view with the following options:
+  - Remove Package: Delete the package from its parent manifest file
+  - Update Package: Update the package to its latest version
+  - View Package Info: Display detailed information about the package
+- Package info view with comprehensive details including:
+  - Package metadata (description, license, author)
+  - Repository and homepage links
+  - Dependency list
+  - Download and publishing information
+
+## [2.1.0] - 2025-04-21
+
+### Added
+- Added File Info view that displays runtime, language, and package manager information for the selected file
+- Automatic file information updates when switching between files in the editor
+
 ## [2.0.0] - 2025-04-20
 
 ### Added
@@ -96,4 +186,4 @@ All notable changes to the "pkg-version" extension will be documented in this fi
 - TreeView showing all detected dependencies
 - Visual indicators for update types (major, minor, patch)
 - Ability to update individual packages
-- Folder exclusion functionality 
+- Folder exclusion functionality

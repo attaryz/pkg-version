@@ -25,6 +25,8 @@ export class Dependency extends vscode.TreeItem {
   public isDevDependency?: boolean; // Indicate if this is a dev dependency
   public children?: Dependency[]; // Store child dependencies for category nodes
   public vulnerabilities?: SnykVulnerability[]; // Store security vulnerabilities
+  public runtime?: string; // The runtime version info (e.g. Node 18)
+  public language?: string; // Primary language of the project
 
   /**
    * Creates a new Dependency tree item.
@@ -60,17 +62,40 @@ export class Dependency extends vscode.TreeItem {
     this.isDevDependency = isDevDependency;
     this.vulnerabilities = vulnerabilities;
 
-    // Update tooltip and description to show both current and latest version
-    if (latestVersion && updateType && updateType !== "none") {
+    const isManifestNode = !version; // Empty string means manifest file
+
+    // If this item represents a manifest/package file, attempt to enrich with info
+    if (isManifestNode && this.resourceUri) {
+      try {
+        const { getPackageInfo } = require("../utils/packageInfo") as typeof import("../utils/packageInfo");
+        const info = getPackageInfo(this.resourceUri.fsPath);
+        if (info) {
+          this.packageManager = info.packageManager;
+          this.language = info.language;
+          this.runtime = info.runtime;
+
+          // Just set a simple tooltip for manifest files
+          this.tooltip = this.label;
+          
+          // Explicitly ensure no description is set
+          this.description = "";
+        }
+      } catch (err) {
+        console.error("Failed to get package info for", this.resourceUri.fsPath, err);
+      }
+    }
+
+    // For manifest nodes we skip the update tooltip logic below
+    if (!isManifestNode && latestVersion && updateType && updateType !== "none") {
       this.tooltip = `${this.label}: ${version} → ${latestVersion} (${updateType} update)${isDevDependency ? ' [dev]' : ''}`;
       // Description is now set in the icon/indicator section
-    } else {
+    } else if (!isManifestNode) {
       this.tooltip = `${this.label}${version ? `: ${version}` : ""}${isDevDependency ? ' [dev]' : ''}`;
       // Description is now set in the icon/indicator section
     }
 
     // Add vulnerability information to tooltip if available
-    if (vulnerabilities && vulnerabilities.length > 0) {
+    if (!isManifestNode && vulnerabilities && vulnerabilities.length > 0) {
       const vulnCount = vulnerabilities.length;
       const highestSeverity = this.getHighestSeverity(vulnerabilities);
       this.tooltip += `\n\n⚠️ ${vulnCount} ${vulnCount === 1 ? 'vulnerability' : 'vulnerabilities'} found (${highestSeverity} severity)`;
@@ -88,12 +113,15 @@ export class Dependency extends vscode.TreeItem {
     }
 
     // Set contextValue based on whether this is a package with an update available
-    if (updateType && updateType !== "none" && latestVersion) {
+    if (!isManifestNode && updateType && updateType !== "none" && latestVersion) {
       this.contextValue = "dependency";
+    } else if (!isManifestNode) {
+      // Even if there's no update, we want to enable the context menu for all packages
+      this.contextValue = "package-dependency";
     }
 
     // Set icon based on updateType and vulnerabilities
-    if (vulnerabilities && vulnerabilities.length > 0) {
+    if (!isManifestNode && vulnerabilities && vulnerabilities.length > 0) {
       // Vulnerability indicators take precedence over update indicators
       const severity = this.getHighestSeverity(vulnerabilities);
       
@@ -112,7 +140,7 @@ export class Dependency extends vscode.TreeItem {
         this.description = `⚠️ ${version}${isDevDependency ? ' [dev]' : ''} (${vulnerabilities.length} vulnerabilities)`;
         this.contextValue = "vulnerable-dependency";
       }
-    } else if (this.updateType && this.updateType !== "none") {
+    } else if (!isManifestNode && this.updateType && this.updateType !== "none") {
       // Use consistent emoji indicators for update types
       if (this.updateType === "major") {
         this.iconPath = new vscode.ThemeIcon(
@@ -139,7 +167,7 @@ export class Dependency extends vscode.TreeItem {
         );
         this.description = `🔵 ${version} → ${latestVersion}${isDevDependency ? ' [dev]' : ''}`;
       }
-    } else {
+    } else if (!isManifestNode) {
       this.iconPath = new vscode.ThemeIcon(
         "pass-filled",
         new vscode.ThemeColor("charts.green")

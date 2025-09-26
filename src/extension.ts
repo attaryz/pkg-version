@@ -5,6 +5,8 @@ import { DependencyProvider } from "./dependencyProvider"; // Import the provide
 import * as path from "path";
 import { getSnykClient } from "./utils/snykClient";
 import { Dependency } from "./models/dependency"; // Import Dependency model
+import { FileInfoProvider } from "./utils/fileInfoProvider"; // Import the FileInfoProvider
+import { generateRequirementsTxt } from "./parsers/poetryParser"; // Import Poetry requirements generator
 
 // Status bar item to display dependency statistics
 let dependencyStatusBarItem: vscode.StatusBarItem;
@@ -148,6 +150,28 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  // Register the FileInfoProvider
+  const fileInfoProvider = new FileInfoProvider();
+  
+  // Register the tree data provider for the file info view
+  const fileInfoTreeView = vscode.window.createTreeView('fileInfoView', {
+    treeDataProvider: fileInfoProvider,
+    showCollapseAll: false
+  });
+  
+  context.subscriptions.push(fileInfoTreeView);
+  
+  // Register refresh command for the file info view
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.refreshFileInfo",
+    () => {
+      console.log("Refresh file info command executed");
+      fileInfoProvider.refresh();
+      vscode.window.showInformationMessage("File info refreshed!");
+    }
+  );
+  context.subscriptions.push(disposable);
+
   // Register refresh command for the dependency tree view
   disposable = vscode.commands.registerCommand(
     "pkg-version.refreshDependencies",
@@ -173,6 +197,61 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       await dependencyProvider.updatePackage(dependency);
+    }
+  );
+  context.subscriptions.push(disposable);
+  
+  // Register remove package command
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.removePackage",
+    async (dependency: Dependency) => {
+      if (!dependency) {
+        vscode.window.showErrorMessage(
+          "Please select a package to remove from the dependencies view"
+        );
+        return;
+      }
+      
+      // Confirm before removing
+      const confirmResult = await vscode.window.showWarningMessage(
+        `Are you sure you want to remove ${dependency.label}?`,
+        { modal: true },
+        "Yes",
+        "No"
+      );
+      
+      if (confirmResult !== "Yes") {
+        return;
+      }
+      
+      try {
+        // Call the remove package method which we'll implement
+        await dependencyProvider.removePackage(dependency);
+        dependencyProvider.refresh();
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to remove package: ${error}`);
+      }
+    }
+  );
+  context.subscriptions.push(disposable);
+  
+  // Register view package info command
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.viewPackageInfo",
+    async (dependency: Dependency) => {
+      if (!dependency) {
+        vscode.window.showErrorMessage(
+          "Please select a package to view from the dependencies view"
+        );
+        return;
+      }
+      
+      try {
+        // Call the view package info method which we'll implement
+        await dependencyProvider.viewPackageInfo(dependency);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to view package info: ${error}`);
+      }
     }
   );
   context.subscriptions.push(disposable);
@@ -508,10 +587,18 @@ export function activate(context: vscode.ExtensionContext) {
             );
             
             // Update the dependency with vulnerability info
-            if (vulnerabilities && vulnerabilities.length > 0) {
-              dependency.vulnerabilities = vulnerabilities;
-              vulnerablePackages++;
-              totalVulnerabilities += vulnerabilities.length;
+            if (vulnerabilities) {
+              // Check if it's an error object
+              if ('success' in vulnerabilities && vulnerabilities.success === false) {
+                // Only show console error since we've already shown a UI notification
+                console.error(`Error checking ${dependency.label}: ${vulnerabilities.error}`);
+              } 
+              // Check if it's an array of vulnerabilities
+              else if (Array.isArray(vulnerabilities) && vulnerabilities.length > 0) {
+                dependency.vulnerabilities = vulnerabilities;
+                vulnerablePackages++;
+                totalVulnerabilities += vulnerabilities.length;
+              }
             }
             
             checkedPackages++;
@@ -539,6 +626,91 @@ export function activate(context: vscode.ExtensionContext) {
           dependencyProvider.refresh();
         }
       );
+    }
+  );
+  context.subscriptions.push(disposable);
+  
+  // Register generate requirements.txt from pyproject.toml command
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.generateRequirementsTxt",
+    async () => {
+      try {
+        // Find pyproject.toml files in the workspace
+        const pyprojectFiles = await vscode.workspace.findFiles(
+          "**/pyproject.toml",
+          "**/node_modules/**"
+        );
+
+        if (pyprojectFiles.length === 0) {
+          vscode.window.showErrorMessage(
+            "No pyproject.toml file found in the workspace"
+          );
+          return;
+        }
+
+        let targetFile: vscode.Uri;
+
+        if (pyprojectFiles.length > 1) {
+          // If multiple pyproject.toml files, let user choose which one to use
+          const items = pyprojectFiles.map((file) => ({
+            label: vscode.workspace.asRelativePath(file),
+            file,
+          }));
+
+          const selection = await vscode.window.showQuickPick(items, {
+            placeHolder: "Select pyproject.toml file to generate requirements.txt from",
+          });
+
+          if (!selection) {
+            return;
+          }
+
+          targetFile = selection.file;
+        } else {
+          // Only one pyproject.toml, use it
+          targetFile = pyprojectFiles[0];
+        }
+
+        // Generate requirements.txt content
+        const requirementsContent = await generateRequirementsTxt(targetFile);
+
+        // Ask user where to save the requirements.txt file
+        const saveUri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.joinPath(
+            vscode.Uri.file(path.dirname(targetFile.fsPath)),
+            "requirements.txt"
+          ),
+          filters: {
+            "Text files": ["txt"],
+            "All files": ["*"],
+          },
+        });
+
+        if (!saveUri) {
+          return;
+        }
+
+        // Write the requirements.txt file
+        await vscode.workspace.fs.writeFile(
+          saveUri,
+          Buffer.from(requirementsContent, "utf8")
+        );
+
+        vscode.window.showInformationMessage(
+          `Generated requirements.txt from ${vscode.workspace.asRelativePath(
+            targetFile
+          )} and saved to ${vscode.workspace.asRelativePath(saveUri)}`
+        );
+
+        // Open the generated file
+        const document = await vscode.workspace.openTextDocument(saveUri);
+        await vscode.window.showTextDocument(document);
+      } catch (err: any) {
+        console.error("Error generating requirements.txt:", err);
+        vscode.window.showErrorMessage(
+          `Failed to generate requirements.txt: ${err.message}`
+        );
+      }
     }
   );
   context.subscriptions.push(disposable);
