@@ -8,7 +8,7 @@ import { Dependency } from "./models/dependency"; // Import Dependency model
 import { FileInfoProvider } from "./utils/fileInfoProvider"; // Import the FileInfoProvider
 import { generateRequirementsTxt } from "./parsers/poetryParser"; // Import Poetry requirements generator
 
-// Status bar item to display dependency statistics
+// Unified status bar item to display dependency statistics
 let dependencyStatusBarItem: vscode.StatusBarItem;
 
 /**
@@ -102,10 +102,9 @@ export function activate(context: vscode.ExtensionContext) {
   // This line of code will only be executed once when your extension is activated
   console.log('Congratulations, your extension "pkg-version" is now active!');
 
-  // Create status bar item
+  // Create unified status bar item
   dependencyStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   dependencyStatusBarItem.command = "pkg-version.refreshDependencies";
-  dependencyStatusBarItem.tooltip = "Package Version Status - Click to refresh";
   context.subscriptions.push(dependencyStatusBarItem);
 
   // Ensure default exclusions are set
@@ -719,36 +718,7 @@ export function activate(context: vscode.ExtensionContext) {
   updateDependencyStatusCounter(dependencyProvider);
 }
 
-/**
- * Updates the status bar counter displaying total dependencies and 
- * how many updates are available.
- * 
- * @param provider The dependency provider to get dependency information from
- */
-async function updateDependencyStatusCounter(provider: DependencyProvider) {
-  try {
-    // Get all outdated dependencies
-    const outdatedDeps = await provider.getAllOutdatedDependencies();
-    
-    if (outdatedDeps.length > 0) {
-      // Show count of outdated dependencies with icon
-      dependencyStatusBarItem.text = `$(arrow-up) ${outdatedDeps.length} updates available`;
-      dependencyStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
-      dependencyStatusBarItem.show();
-    } else {
-      // Check if we have any dependencies at all
-      // This is a simplified check that doesn't count all dependencies
-      // A more thorough check would require scanning all package files
-      dependencyStatusBarItem.text = `$(check) Dependencies up to date`;
-      dependencyStatusBarItem.backgroundColor = undefined;
-      dependencyStatusBarItem.show();
-    }
-  } catch (error) {
-    console.error("Error updating dependency status bar:", error);
-    // In case of error, hide the status bar item to avoid showing incorrect information
-    dependencyStatusBarItem.hide();
-  }
-}
+
 
 /**
  * Called when the extension is deactivated.
@@ -757,4 +727,81 @@ async function updateDependencyStatusCounter(provider: DependencyProvider) {
 export function deactivate() {
   // Nothing to clean up at this time
   console.log("pkg-version extension deactivated");
+}
+
+/**
+ * Updates the unified status bar item displaying dependency statistics.
+ * Shows a single status bar item with format "Package updates: X major, Y minor, Z patch, W deprecated".
+ * 
+ * @param provider The dependency provider to get dependency information from
+ */
+async function updateDependencyStatusCounter(provider: DependencyProvider) {
+  try {
+    // Get all outdated dependencies
+    const outdatedDeps = await provider.getAllOutdatedDependencies();
+    
+    // Categorize updates by type
+    const updateCounts = {
+      major: 0,
+      minor: 0,
+      patch: 0,
+      deprecated: 0
+    };
+
+    // Count updates by type
+    outdatedDeps.forEach(dep => {
+      if (dep.updateType === "major") {
+        updateCounts.major++;
+      } else if (dep.updateType === "minor") {
+        updateCounts.minor++;
+      } else if (dep.updateType === "patch") {
+        updateCounts.patch++;
+      }
+      // Note: deprecated packages would need to be identified separately
+      // This could be enhanced in the future with package registry data
+    });
+
+    const totalUpdates = updateCounts.major + updateCounts.minor + updateCounts.patch + updateCounts.deprecated;
+
+    if (totalUpdates === 0) {
+      // Show "up to date" status
+      dependencyStatusBarItem.text = "  $(package) $(check) Up to date  ";
+      dependencyStatusBarItem.tooltip = "All dependencies are up to date - Click to refresh";
+      dependencyStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.prominentBackground");
+    } else {
+      // Build status text with counts
+      const statusParts = [];
+      if (updateCounts.major > 0) {
+        statusParts.push(`${updateCounts.major} major`);
+      }
+      if (updateCounts.minor > 0) {
+        statusParts.push(`${updateCounts.minor} minor`);
+      }
+      if (updateCounts.patch > 0) {
+        statusParts.push(`${updateCounts.patch} patch`);
+      }
+      if (updateCounts.deprecated > 0) {
+        statusParts.push(`${updateCounts.deprecated} deprecated`);
+      }
+      
+      dependencyStatusBarItem.text = `  $(package) Package updates: ${statusParts.join(", ")}  `;
+      dependencyStatusBarItem.tooltip = `${totalUpdates} package update${totalUpdates === 1 ? '' : 's'} available - Click to refresh`;
+      
+      // Set background color based on highest priority update type
+      if (updateCounts.major > 0 || updateCounts.deprecated > 0) {
+        dependencyStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
+      } else if (updateCounts.minor > 0) {
+        dependencyStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
+      } else {
+        dependencyStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.prominentBackground");
+      }
+    }
+    
+    dependencyStatusBarItem.show();
+
+  } catch (error) {
+    console.error("Error updating dependency status bar:", error);
+    // In case of error, hide status bar item to avoid showing incorrect information
+    dependencyStatusBarItem.hide();
+  }
 }

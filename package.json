@@ -2,7 +2,7 @@
   "name": "pkg-version",
   "displayName": "Package Version Checker",
   "description": "Checks package versions in common manifest files (package.json, composer.json, requirements.txt, pyproject.toml, pubspec.yaml) for updates.",
-  "version": "2.1.2",
+  "version": "2.5.0",
   "publisher": "Abdullah-Dev",
   "repository": {
     "type": "git",
@@ -239,7 +239,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run esbuild-base -- --minify",
-    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --external:js-yaml --external:semver --external:axios --format=cjs --platform=node",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --external:js-yaml --external:semver --external:axios --format=cjs --platform=node --keep-names",
     "esbuild": "npm run esbuild-base -- --sourcemap",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
     "compile": "tsc -p ./",
