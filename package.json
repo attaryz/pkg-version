@@ -313,10 +313,10 @@
     "lint": "eslint .",
     "pretest": "yarn compile && yarn lint",
     "test": "node ./test/runTest.js",
-    "vsce": "yarn dlx @vscode/vsce",
-    "publish": "yarn compile && yarn vsce publish --no-yarn",
-    "package": "yarn compile && yarn vsce package --no-yarn",
-    "package-and-install": "yarn install && yarn package && code --install-extension pkg-version-2.5.3.vsix"
+    "vsce": "vsce",
+    "publish": "yarn compile && vsce publish --no-yarn",
+    "package": "yarn compile && vsce package --no-yarn",
+    "package-and-install": "yarn install && yarn package && code --install-extension pkg-version-2.6.0.vsix"
   },
   "dependencies": {
     "axios": "^1.8.4",
