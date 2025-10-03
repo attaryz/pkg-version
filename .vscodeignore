@@ -1,9 +1,45 @@
+# Source files - exclude from package
+src/**
+test/**
+test-folder/**
+test-workspace/**
 .vscode/**
-.gitignore
-node_modules/**
-npm-debug.log*
-*.vsix
-.DS_Store
-extra/**
+.vscode-test/**
 .cursor/**
+.trae/**
+.github/**
+extra/**
+
+# Config files - exclude from package
+tsconfig.json
+.gitignore
+.vscodeignore
+.yarnrc.yml
+package-lock.json
+yarn.lock
+
+# Test files
+test-*.json
+test-*.toml
+test-*.js
+*.test.js
+
+# Build artifacts and dependencies
+# Exclude dev dependencies but keep production dependencies
+node_modules/**/test/**
+node_modules/**/tests/**
+node_modules/**/*.md
+node_modules/**/.bin/**
+
+# Logs and temp files
+npm-debug.log*
+*.log
+.DS_Store
+
+# VSIX packages
+*.vsix
 pkg-version-*.vsix
+
+# Documentation (optional - remove if you want to include)
+TASKS.md
+.github/**

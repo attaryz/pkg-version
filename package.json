@@ -2,7 +2,7 @@
   "name": "pkg-version",
   "displayName": "Package Version Checker",
   "description": "Checks package versions in common manifest files (package.json, composer.json, requirements.txt, pyproject.toml, pubspec.yaml) for updates.",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "publisher": "Abdullah-Dev",
   "repository": {
     "type": "git",
@@ -15,6 +15,7 @@
     "Other"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "workspaceContains:**/package.json",
     "workspaceContains:**/composer.json",
     "workspaceContains:**/composer.lock",
@@ -68,6 +69,11 @@
         "icon": "$(shield)"
       },
       {
+        "command": "pkg-version.exportVulnerabilityReport",
+        "title": "Export Vulnerability Report",
+        "icon": "$(export)"
+      },
+      {
         "command": "pkg-version.refreshFileInfo",
         "title": "Refresh File Info",
         "icon": "$(refresh)"
@@ -78,6 +84,11 @@
         "icon": "$(trash)"
       },
       {
+        "command": "pkg-version.scanPackageVulnerabilities",
+        "title": "Scan for Vulnerabilities",
+        "icon": "$(shield)"
+      },
+      {
         "command": "pkg-version.viewPackageInfo",
         "title": "View Package Info",
         "icon": "$(info)"
@@ -86,6 +97,12 @@
         "command": "pkg-version.generateRequirementsTxt",
         "title": "Generate requirements.txt from Poetry",
         "icon": "$(file-add)"
+      }
+      ,
+      {
+        "command": "pkg-version.refreshSecurityReport",
+        "title": "Refresh Security Report",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -132,6 +149,13 @@
           "group": "3_poetry@1",
           "icon": "$(file-add)"
         }
+        ,
+        {
+          "command": "pkg-version.refreshSecurityReport",
+          "when": "view == securityReportView",
+          "group": "navigation@0",
+          "icon": "$(refresh)"
+        }
       ],
       "view/item/context": [
         {
@@ -154,6 +178,11 @@
           "command": "pkg-version.viewPackageInfo",
           "when": "view == packageDependencies && (viewItem == dependency || viewItem == package-dependency)",
           "group": "2_information"
+        },
+        {
+          "command": "pkg-version.scanPackageVulnerabilities",
+          "when": "view == packageDependencies && (viewItem == dependency || viewItem == package-dependency || viewItem == vulnerable-dependency)",
+          "group": "3_security"
         }
       ],
       "explorer/context": [
@@ -179,6 +208,11 @@
           "id": "packageDependencies",
           "name": "Dependencies",
           "contextualTitle": "Package Dependencies"
+        },
+        {
+          "id": "securityReportView",
+          "name": "Security Report",
+          "contextualTitle": "Security Report"
         },
         {
           "id": "fileInfoView",
@@ -224,31 +258,65 @@
           ],
           "description": "How to detect Composer packages: 'auto' (try all methods), 'composer.json' (only from composer.json), 'composer.lock' (only from composer.lock), 'vendor' (only from vendor dir), or 'all' (use all methods)."
         },
+        "pkgVersion.useOSVProvider": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable OSV.dev vulnerability scanning (free, no configuration required)"
+        },
+        "pkgVersion.useGitHubAdvisoryProvider": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable GitHub Advisory Database vulnerability scanning (free, no configuration required)"
+        },
+        "pkgVersion.useSnykProvider": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Snyk vulnerability scanning (requires API token and organization ID)"
+        },
         "pkgVersion.snykApiToken": {
           "type": "string",
           "default": "",
-          "description": "API token for Snyk vulnerability scanning. Get your token from https://app.snyk.io/account"
+          "description": "API token for Snyk vulnerability scanning. Get your token from https://app.snyk.io/account (only needed if Snyk is enabled)"
+        },
+        "pkgVersion.snykOrgId": {
+          "type": "string",
+          "default": "",
+          "description": "Snyk Organization ID for vulnerability scanning. Find your organization ID in your Snyk account settings at https://app.snyk.io (only needed if Snyk is enabled)"
         },
         "pkgVersion.enableVulnerabilityChecking": {
           "type": "boolean",
           "default": false,
-          "description": "Enable automatic vulnerability checking when loading dependencies (requires Snyk API token)"
+          "description": "Enable automatic vulnerability checking when loading dependencies"
+        },
+        "pkgVersion.scanOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically scan for vulnerabilities when package files are saved"
+        },
+        "pkgVersion.scanOnSaveDelay": {
+          "type": "number",
+          "default": 2000,
+          "description": "Delay in milliseconds before scanning after save (to avoid excessive scans)"
+        },
+        "pkgVersion.hideVulnerabilitiesBelow": {
+          "type": "string",
+          "enum": ["none", "low", "medium", "high", "critical"],
+          "default": "none",
+          "description": "Hide vulnerabilities below this severity level (none = show all)"
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run esbuild-base -- --minify",
-    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --external:js-yaml --external:semver --external:axios --format=cjs --platform=node --keep-names",
-    "esbuild": "npm run esbuild-base -- --sourcemap",
-    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint .",
-    "pretest": "npm run compile && npm run lint",
+    "pretest": "yarn compile && yarn lint",
     "test": "node ./test/runTest.js",
-    "publish": "npx @vscode/vsce publish",
-    "package": "npm run esbuild-base -- --minify && npx @vscode/vsce package"
+    "vsce": "yarn dlx @vscode/vsce",
+    "publish": "yarn compile && yarn vsce publish --no-yarn",
+    "package": "yarn compile && yarn vsce package --no-yarn",
+    "package-and-install": "yarn install && yarn package && code --install-extension pkg-version-2.5.3.vsix"
   },
   "dependencies": {
     "axios": "^1.8.4",
@@ -256,6 +324,9 @@
     "semver": "^7.7.1"
   },
   "devDependencies": {
+    "@secretlint/secretlint-formatter-sarif": "^11.2.4",
+    "@secretlint/secretlint-rule-no-dotenv": "^11.2.4",
+    "@secretlint/secretlint-rule-preset-recommend": "^11.2.4",
     "@types/glob": "^8.1.0",
     "@types/js-yaml": "^4.0.9",
     "@types/mocha": "^10.0.1",
@@ -263,6 +334,7 @@
     "@types/semver": "^7.7.0",
     "@types/vscode": "^1.80.0",
     "@vscode/test-electron": "^2.3.3",
+    "@vscode/vsce": "^3.6.2",
     "esbuild": "^0.25.2",
     "eslint": "^8.44.0",
     "glob": "^10.3.3",

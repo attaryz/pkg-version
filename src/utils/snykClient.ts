@@ -1,52 +1,57 @@
 import axios from "axios"
 import * as vscode from "vscode"
+import {
+  IVulnerabilityProvider,
+  Vulnerability,
+  VulnerabilityCheckResult,
+} from "./vulnerabilityProvider"
+import { REGISTRY_URLS } from "../config/registryUrls"
 
-/**
- * Interface representing a vulnerability found by Snyk
- */
-export interface SnykVulnerability {
-  id: string
-  title: string
-  severity: "low" | "medium" | "high" | "critical"
-  url: string
-  package: string
-  version: string
-  fixedIn: string[]
-  cvssScore: number
-  description?: string
-  cwe?: string[]
-  cve?: string[]
-}
-
-/**
- * Error response from Snyk API operations
- */
-export interface SnykError {
-  success: false
-  error: string
-  statusCode?: number
-  packageName: string
-  packageVersion: string
-}
-
-/**
- * Result of a vulnerability check, either vulnerabilities or error
- */
-export type SnykCheckResult = SnykVulnerability[] | SnykError
+// Legacy exports for backward compatibility
+export type SnykVulnerability = Vulnerability
+export type SnykCheckResult = VulnerabilityCheckResult
 
 /**
  * Snyk API client for checking package vulnerabilities
  */
-export class SnykClient {
+export class SnykClient implements IVulnerabilityProvider {
+  readonly name = "Snyk"
+  readonly requiresAuth = true
   private apiToken: string | undefined
   private orgId: string | undefined
-  private baseUrl = "https://api.snyk.io/v1"
   private apiRateLimit = 180
 
   constructor() {
     const config = vscode.workspace.getConfiguration("pkgVersion")
     this.apiToken = config.get<string>("snykApiToken")
     this.orgId = config.get<string>("snykOrgId")
+  }
+
+  /**
+   * Gets configuration instructions for Snyk
+   */
+  getConfigurationInstructions(): string {
+    return `Snyk requires:
+1. API Token from https://app.snyk.io/account
+2. Organization ID from https://app.snyk.io (Settings)
+
+Configure in VS Code settings:
+- pkgVersion.snykApiToken
+- pkgVersion.snykOrgId`
+  }
+
+  /**
+   * Tests if the provider is ready (configured and valid)
+   * @returns Promise resolving to boolean indicating if provider is ready
+   */
+  async isReady(): Promise<boolean> {
+    // Quick check: if no token or org ID, don't even try to validate
+    if (!this.apiToken || !this.orgId) {
+      return false
+    }
+    
+    // If we have credentials, validate them
+    return await this.isTokenValid()
   }
 
   /**
@@ -59,17 +64,15 @@ export class SnykClient {
     }
 
     try {
-      const response = await axios.get(`${this.baseUrl}/user`, {
+      const response = await axios.get(REGISTRY_URLS.snyk.user, {
         headers: {
           Authorization: `Bearer ${this.apiToken}`,
         },
       })
 
-      console.log("Snyk API token validation response:", response.status)
-
       return response.status === 200
     } catch (error: any) {
-      console.error("Failed to validate Snyk API token:", error.message)
+      console.error("Snyk API token validation failed:", error.message)
 
       if (error.response?.status === 401) {
         vscode.window.showErrorMessage(
@@ -97,9 +100,21 @@ export class SnykClient {
     version: string,
     ecosystem: string
   ): Promise<SnykCheckResult | undefined> {
-    if (!this.apiToken || !this.orgId) {
+    if (!this.apiToken) {
       const error =
-        "Snyk API token or organization ID not configured. Please check extension settings."
+        "Snyk API token not configured. Please configure it in extension settings (pkgVersion.snykApiToken)."
+      vscode.window.showWarningMessage(error)
+      return {
+        success: false,
+        error,
+        packageName,
+        packageVersion: version,
+      }
+    }
+    
+    if (!this.orgId) {
+      const error =
+        "Snyk Organization ID not configured. Please configure it in extension settings (pkgVersion.snykOrgId). You can find your organization ID at https://app.snyk.io"
       vscode.window.showWarningMessage(error)
       return {
         success: false,
@@ -129,7 +144,7 @@ export class SnykClient {
       try {
         const purl = `pkg:${packageManager}/${packageName}@${version}`
         response = await axios.get(
-          `${this.baseUrl}/rest/orgs/${
+          `${REGISTRY_URLS.snyk.base}/rest/orgs/${
             this.orgId
           }/packages/${encodeURIComponent(purl)}/issues`,
           {
@@ -150,7 +165,7 @@ export class SnykClient {
           purlError.message
         )
         response = await axios.post(
-          `${this.baseUrl}/test/${packageManager}`,
+          `${REGISTRY_URLS.snyk.base}/test/${packageManager}`,
           {
             name: packageName,
             version: version,

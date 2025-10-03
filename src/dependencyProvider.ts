@@ -1024,6 +1024,10 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
       
       console.log(`Final logo URL for ${packageName}: ${packageInfo.logo}`);
       
+      // Debug: Log vulnerability information
+      console.log(`Vulnerabilities for ${packageName}:`, dependency.vulnerabilities);
+      console.log(`Number of vulnerabilities: ${dependency.vulnerabilities?.length || 0}`);
+      
       // Generate HTML content for the webview
       panel.webview.html = `
         <!DOCTYPE html>
@@ -1131,6 +1135,58 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
               font-family: monospace;
               font-size: 12px;
             }
+            .vulnerabilities-container {
+              margin-top: 15px;
+            }
+            .vulnerability-card {
+              border: 1px solid var(--vscode-panel-border);
+              border-radius: 6px;
+              padding: 15px;
+              margin-bottom: 15px;
+              background-color: var(--vscode-input-background);
+            }
+            .vulnerability-card.severity-critical,
+            .vulnerability-card.severity-high {
+              border-left: 4px solid var(--vscode-errorForeground);
+            }
+            .vulnerability-card.severity-medium {
+              border-left: 4px solid var(--vscode-editorWarning-foreground);
+            }
+            .vulnerability-card.severity-low {
+              border-left: 4px solid var(--vscode-editorInfo-foreground);
+            }
+            .vuln-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 10px;
+            }
+            .vuln-title {
+              font-weight: bold;
+              font-size: 14px;
+            }
+            .vuln-severity {
+              padding: 4px 8px;
+              border-radius: 4px;
+              font-size: 11px;
+              font-weight: bold;
+            }
+            .severity-badge-critical,
+            .severity-badge-high {
+              background-color: var(--vscode-errorForeground);
+              color: white;
+            }
+            .severity-badge-medium {
+              background-color: var(--vscode-editorWarning-foreground);
+              color: black;
+            }
+            .severity-badge-low {
+              background-color: var(--vscode-editorInfo-foreground);
+              color: white;
+            }
+            .vuln-details p {
+              margin: 5px 0;
+            }
           </style>
         </head>
         <body>
@@ -1173,10 +1229,49 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
               
               <div class="info-label">Last Published:</div>
               <div>${packageInfo.lastPublished}</div>
-              
               <div class="info-label">Download Count:</div>
               <div>${packageInfo.downloadCount}</div>
             </div>
+            
+            ${dependency.vulnerabilities && dependency.vulnerabilities.length > 0 ? `
+            <h2>🛡️ Security Vulnerabilities (${dependency.vulnerabilities.length})</h2>
+            <div class="vulnerabilities-container">
+              ${dependency.vulnerabilities.map((vuln) => {
+                // Escape HTML to prevent injection and rendering issues
+                const escapeHtml = (text: any): string => {
+                  if (!text) return '';
+                  return String(text)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+                };
+                
+                return `
+                <div class="vulnerability-card severity-${vuln.severity}">
+                  <div class="vuln-header">
+                    <span class="vuln-title">${escapeHtml(vuln.title)}</span>
+                    <span class="vuln-severity severity-badge-${vuln.severity}">${vuln.severity.toUpperCase()}</span>
+                  </div>
+                  <div class="vuln-details">
+                    <p><strong>ID:</strong> ${escapeHtml(vuln.id)}</p>
+                    ${vuln.cvssScore ? `<p><strong>CVSS Score:</strong> ${vuln.cvssScore}</p>` : ''}
+                    ${vuln.description ? `<p><strong>Description:</strong> ${escapeHtml(vuln.description)}</p>` : ''}
+                    ${vuln.fixedIn && vuln.fixedIn.length > 0 ? `<p><strong>Fixed in:</strong> ${vuln.fixedIn.map((v: string) => escapeHtml(v)).join(', ')}</p>` : '<p><strong>Fix:</strong> No fix available yet</p>'}
+                    ${vuln.cve && vuln.cve.length > 0 ? `<p><strong>CVE:</strong> ${vuln.cve.map((c: string) => escapeHtml(c)).join(', ')}</p>` : ''}
+                    ${vuln.cwe && vuln.cwe.length > 0 ? `<p><strong>CWE:</strong> ${vuln.cwe.map((c: string) => escapeHtml(c)).join(', ')}</p>` : ''}
+                    <p><a href="${escapeHtml(vuln.url)}" target="_blank">View Details →</a></p>
+                  </div>
+                </div>
+                `;
+              }).join('')}
+            </div>
+            ` : `
+            <!-- Debug: Vulnerability check -->
+            <!-- Has vulnerabilities property: ${!!dependency.vulnerabilities} -->
+            <!-- Vulnerabilities length: ${dependency.vulnerabilities?.length || 0} -->
+            `}
             
             <h2>Dependencies</h2>
             <div class="deps-container">
@@ -1187,8 +1282,6 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
                 : '<p>No dependencies information available</p>'
               }
             </div>
-            
-
           </div>
           <script>
             // Handle image loading errors

@@ -22,16 +22,19 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-        cache: 'npm'
+        cache: 'yarn'
+        
+    - name: Enable Corepack
+      run: corepack enable
         
     - name: Install dependencies
-      run: npm ci
+      run: yarn install --immutable
       
     - name: Compile TypeScript
-      run: npm run compile
+      run: yarn compile
       
     - name: Build extension package
-      run: npm run package
+      run: yarn package
       
     - name: Upload build artifacts
       if: matrix.node-version == 20

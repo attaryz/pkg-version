@@ -2,6 +2,20 @@
 
 All notable changes to the "pkg-version" extension will be documented in this file.
 
+## [2.5.2] - 2025-10-03
+
+### Fixed
+- Fixed `command 'pkg-version.refreshDependencies' not found` error by adding `onStartupFinished` to activation events, ensuring the command is registered on VS Code startup.
+- Fixed `graceful-fs` error during `vsce` packaging by adding `@vscode/vsce` as a development dependency and using the `--no-dependencies` flag to bypass Yarn PnP compatibility issues.
+
+## [2.5.1] - 2025-10-02
+
+### Fixed
+- Fixed Yarn PnP (Plug'n'Play) compatibility issues with VSCE packaging
+- Resolved "graceful-fs not declared in dependencies" error during packaging
+- Successfully packaged extension using npm-based VSCE after temporary Yarn-to-npm switch
+- Restored Yarn PnP configuration after successful packaging
+
 ## [2.1.1] - 2025-01-27
 
 ### Added

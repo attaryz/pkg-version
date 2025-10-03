@@ -1,23 +1,47 @@
 import axios from "axios";
 import * as semver from "semver";
+import { getUpdateCache } from "./updateCache";
+import { REGISTRY_URLS, API_TIMEOUTS } from "../config/registryUrls";
 
 /**
  * Fetches the latest version of a package from npm registry.
  * Makes an HTTP request to the public npm registry API.
+ * Uses caching to reduce API calls.
  *
  * @param packageName - The name of the npm package to check
+ * @param currentVersion - Optional current version for cache key
  * @returns The latest version string or undefined if fetching fails
  */
 export async function fetchLatestNpmVersion(
-  packageName: string
+  packageName: string,
+  currentVersion?: string
 ): Promise<string | undefined> {
+  // Check cache first
+  if (currentVersion) {
+    const cache = getUpdateCache();
+    const cached = cache.get(packageName, currentVersion, "npm");
+    if (cached) {
+      return cached.latestVersion;
+    }
+  }
+
   try {
     // Use a public registry URL
     const response = await axios.get(
-      `https://registry.npmjs.org/${packageName}/latest`
+      REGISTRY_URLS.npm.latest(packageName),
+      { timeout: API_TIMEOUTS.default }
     );
     if (response.data && response.data.version) {
-      return response.data.version;
+      const latestVersion = response.data.version;
+      
+      // Cache the result if we have current version
+      if (currentVersion && latestVersion) {
+        const cache = getUpdateCache();
+        const updateType = getUpdateType(currentVersion, latestVersion);
+        cache.set(packageName, currentVersion, "npm", latestVersion, updateType);
+      }
+      
+      return latestVersion;
     }
   } catch (error: any) {
     // Log specific error for debugging, but don't spam the user's window
@@ -35,15 +59,49 @@ export async function fetchLatestNpmVersion(
 }
 
 /**
+ * Helper function to determine update type
+ */
+function getUpdateType(current: string, latest: string): "major" | "minor" | "patch" | "prerelease" | "none" {
+  try {
+    const currentClean = semver.valid(semver.coerce(current));
+    const latestClean = semver.valid(semver.coerce(latest));
+    
+    if (!currentClean || !latestClean) return "none";
+    if (currentClean === latestClean) return "none";
+    
+    const diff = semver.diff(currentClean, latestClean);
+    if (diff === "major") return "major";
+    if (diff === "minor" || diff === "preminor") return "minor";
+    if (diff === "patch" || diff === "prepatch") return "patch";
+    if (diff === "prerelease" || diff === "premajor") return "prerelease";
+    
+    return "none";
+  } catch {
+    return "none";
+  }
+}
+
+/**
  * Fetches the latest version of a package from the Packagist (PHP/Composer) registry.
  * Uses Packagist API v2 to get package information.
+ * Uses caching to reduce API calls.
  *
  * @param packageName - The name of the Composer package (vendor/package format)
+ * @param currentVersion - Optional current version for cache key
  * @returns The latest stable version string or undefined if fetching fails
  */
 export async function fetchLatestPackagistVersion(
-  packageName: string
+  packageName: string,
+  currentVersion?: string
 ): Promise<string | undefined> {
+  // Check cache first
+  if (currentVersion) {
+    const cache = getUpdateCache();
+    const cached = cache.get(packageName, currentVersion, "composer");
+    if (cached) {
+      return cached.latestVersion;
+    }
+  }
   // Packagist API requires vendor/package format
   if (!packageName.includes("/")) {
     console.warn(`Invalid composer package name format: ${packageName}`);
@@ -57,8 +115,8 @@ export async function fetchLatestPackagistVersion(
   try {
     // Use the Packagist API v2
     const response = await axios.get(
-      `https://repo.packagist.org/p2/${cleanPackageName}.json`,
-      { timeout: 5000 } // Add timeout to prevent hanging requests
+      REGISTRY_URLS.packagist.package(cleanPackageName),
+      { timeout: API_TIMEOUTS.packagist }
     );
 
     // The response contains package details, including versions
@@ -141,6 +199,14 @@ export async function fetchLatestPackagistVersion(
         console.log(
           `Latest version for ${cleanPackageName} is ${latestStableVersion}`
         );
+        
+        // Cache the result
+        if (currentVersion) {
+          const cache = getUpdateCache();
+          const updateType = getUpdateType(currentVersion, latestStableVersion);
+          cache.set(packageName, currentVersion, "composer", latestStableVersion, updateType);
+        }
+        
         return latestStableVersion;
       } else {
         // Fallback if no stable version found, maybe return latest pre-release?

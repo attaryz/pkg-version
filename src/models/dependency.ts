@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { SnykVulnerability } from "../utils/snykClient";
+import { Vulnerability } from "../utils/vulnerabilityProvider";
 
 /**
  * Represents a dependency item in the tree view.
@@ -24,7 +24,7 @@ export class Dependency extends vscode.TreeItem {
   public parentFile?: string; // Store the parent file path
   public isDevDependency?: boolean; // Indicate if this is a dev dependency
   public children?: Dependency[]; // Store child dependencies for category nodes
-  public vulnerabilities?: SnykVulnerability[]; // Store security vulnerabilities
+  public vulnerabilities?: Vulnerability[]; // Store security vulnerabilities
   public runtime?: string; // The runtime version info (e.g. Node 18)
   public language?: string; // Primary language of the project
 
@@ -52,7 +52,7 @@ export class Dependency extends vscode.TreeItem {
     packageManager?: string, // Add package manager parameter
     parentFile?: string, // Add parent file path parameter
     isDevDependency?: boolean, // Add isDevDependency parameter
-    vulnerabilities?: SnykVulnerability[] // Add vulnerabilities parameter
+    vulnerabilities?: Vulnerability[] // Add vulnerabilities parameter
   ) {
     super(label, collapsibleState);
     this.latestVersion = latestVersion;
@@ -96,19 +96,24 @@ export class Dependency extends vscode.TreeItem {
 
     // Add vulnerability information to tooltip if available
     if (!isManifestNode && vulnerabilities && vulnerabilities.length > 0) {
-      const vulnCount = vulnerabilities.length;
-      const highestSeverity = this.getHighestSeverity(vulnerabilities);
-      this.tooltip += `\n\n⚠️ ${vulnCount} ${vulnCount === 1 ? 'vulnerability' : 'vulnerabilities'} found (${highestSeverity} severity)`;
+      // Filter vulnerabilities by severity
+      const filteredVulns = this.filterVulnerabilitiesBySeverity(vulnerabilities);
+      const vulnCount = filteredVulns.length;
       
-      // Add first 3 vulnerabilities to tooltip
-      const maxVulnsToShow = Math.min(3, vulnCount);
-      for (let i = 0; i < maxVulnsToShow; i++) {
-        const v = vulnerabilities[i];
-        this.tooltip += `\n- ${v.title} (${v.severity})`;
-      }
-      
-      if (vulnCount > maxVulnsToShow) {
-        this.tooltip += `\n- ... and ${vulnCount - maxVulnsToShow} more`;
+      if (vulnCount > 0) {
+        const highestSeverity = this.getHighestSeverity(filteredVulns);
+        this.tooltip += `\n\n⚠️ ${vulnCount} ${vulnCount === 1 ? 'vulnerability' : 'vulnerabilities'} found (${highestSeverity} severity)`;
+        
+        // Add first 3 vulnerabilities to tooltip
+        const maxVulnsToShow = Math.min(3, vulnCount);
+        for (let i = 0; i < maxVulnsToShow; i++) {
+          const v = filteredVulns[i];
+          this.tooltip += `\n- ${v.title} (${v.severity})`;
+        }
+        
+        if (vulnCount > maxVulnsToShow) {
+          this.tooltip += `\n- ... and ${vulnCount - maxVulnsToShow} more`;
+        }
       }
     }
 
@@ -186,11 +191,31 @@ export class Dependency extends vscode.TreeItem {
   }
   
   /**
+   * Filter vulnerabilities based on severity settings
+   */
+  private filterVulnerabilitiesBySeverity(vulnerabilities: Vulnerability[]): Vulnerability[] {
+    const config = vscode.workspace.getConfiguration("pkgVersion");
+    const hideBelow = config.get<string>("hideVulnerabilitiesBelow") || "none";
+    
+    if (hideBelow === "none") {
+      return vulnerabilities;
+    }
+    
+    const severityOrder = ["low", "medium", "high", "critical"];
+    const minSeverityIndex = severityOrder.indexOf(hideBelow);
+    
+    return vulnerabilities.filter(vuln => {
+      const vulnIndex = severityOrder.indexOf(vuln.severity);
+      return vulnIndex >= minSeverityIndex;
+    });
+  }
+
+  /**
    * Gets the highest severity level from a list of vulnerabilities
    * @param vulnerabilities The list of vulnerabilities to check
    * @returns The highest severity level found
    */
-  private getHighestSeverity(vulnerabilities: SnykVulnerability[]): string {
+  private getHighestSeverity(vulnerabilities: Vulnerability[]): string {
     const severityOrder = ["critical", "high", "medium", "low"];
     let highestIndex = severityOrder.length; // Default to lowest severity
     
@@ -203,4 +228,4 @@ export class Dependency extends vscode.TreeItem {
     
     return highestIndex < severityOrder.length ? severityOrder[highestIndex] : "low";
   }
-} 
+}

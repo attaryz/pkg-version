@@ -3,13 +3,15 @@
 import * as vscode from "vscode";
 import { DependencyProvider } from "./dependencyProvider"; // Import the provider
 import * as path from "path";
-import { getSnykClient } from "./utils/snykClient";
+import { refreshVulnerabilityProviderManager } from "./utils/vulnerabilityProviderManager";
+import { registerVulnerabilityCommands } from "./commands/vulnerabilityCommands";
+import { initializeStatusBar, updateDependencyStatusCounter as updateDependencyStatusCounterUtil } from "./utils/statusBar";
 import { Dependency } from "./models/dependency"; // Import Dependency model
 import { FileInfoProvider } from "./utils/fileInfoProvider"; // Import the FileInfoProvider
 import { generateRequirementsTxt } from "./parsers/poetryParser"; // Import Poetry requirements generator
+import { SecurityReportProvider } from "./securityReportProvider";
 
-// Unified status bar item to display dependency statistics
-let dependencyStatusBarItem: vscode.StatusBarItem;
+
 
 /**
  * Ensures that default exclusion settings are properly applied to prevent
@@ -63,9 +65,7 @@ async function ensureDefaultExclusions() {
       currentExclusions,
       vscode.ConfigurationTarget.Global
     );
-    console.log(
-      "Updated default exclusions to ensure nested vendor folders, lock files, and other critical files are excluded"
-    );
+    // Updated default exclusions
   }
 
   // Ensure scanVendorDirectory is set to true by default
@@ -76,7 +76,7 @@ async function ensureDefaultExclusions() {
       true,
       vscode.ConfigurationTarget.Global
     );
-    console.log("Set scanVendorDirectory to true by default");
+    // Set scanVendorDirectory to true by default
   }
 
   // Ensure composerPackageDetection is set to "auto" by default
@@ -87,7 +87,7 @@ async function ensureDefaultExclusions() {
       "auto",
       vscode.ConfigurationTarget.Global
     );
-    console.log("Set composerPackageDetection to 'auto' by default");
+    // Set composerPackageDetection to 'auto' by default
   }
 }
 
@@ -98,34 +98,16 @@ async function ensureDefaultExclusions() {
  * @param {vscode.ExtensionContext} context - The extension context provided by VS Code
  */
 export function activate(context: vscode.ExtensionContext) {
-  // Use the console to output diagnostic information (console.log) and errors (console.error)
-  // This line of code will only be executed once when your extension is activated
-  console.log('Congratulations, your extension "pkg-version" is now active!');
+  // Extension activated
 
-  // Create unified status bar item
-  dependencyStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  dependencyStatusBarItem.command = "pkg-version.refreshDependencies";
-  context.subscriptions.push(dependencyStatusBarItem);
+  // Initialize unified status bar via utility
+  initializeStatusBar(context);
 
   // Ensure default exclusions are set
-  ensureDefaultExclusions().then(() => {
-    console.log("Default exclusions verified");
-  });
+  ensureDefaultExclusions();
 
   // Declare disposable variable at the top
   let disposable: vscode.Disposable;
-
-  // Register the checkUpdates command defined in package.json
-  disposable = vscode.commands.registerCommand(
-    "pkg-version.checkUpdates",
-    function () {
-      vscode.window.showInformationMessage("Checking for package updates!");
-      // TODO: Implement full package update check functionality
-      // This should scan all package files and report outdated dependencies
-    }
-  );
-
-  context.subscriptions.push(disposable);
 
   // Get workspace root path for the provider
   const rootPath =
@@ -136,17 +118,44 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the TreeView provider
   const dependencyProvider = new DependencyProvider(rootPath);
-  
+
   // Set up dependency status counter update
   dependencyProvider.onDidChangeTreeData(() => {
-    updateDependencyStatusCounter(dependencyProvider);
+    updateDependencyStatusCounterUtil(dependencyProvider);
   });
   
-  context.subscriptions.push(
-    vscode.window.registerTreeDataProvider(
-      "packageDependencies", // This must match the view id in package.json
-      dependencyProvider
-    )
+  // Create tree view to get selection
+  const packageTreeView = vscode.window.createTreeView("packageDependencies", {
+    treeDataProvider: dependencyProvider,
+    showCollapseAll: true
+  });
+  context.subscriptions.push(packageTreeView);
+
+  // Register the Security Report provider and view
+  const securityReportProvider = new SecurityReportProvider(dependencyProvider);
+  const securityReportView = vscode.window.createTreeView('securityReportView', {
+    treeDataProvider: securityReportProvider,
+    showCollapseAll: true
+  });
+  context.subscriptions.push(securityReportView);
+
+  // Register refresh command for the security report view
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.refreshSecurityReport",
+    () => {
+      // Refresh security report
+      securityReportProvider.refresh();
+      vscode.window.showInformationMessage("Security report refreshed!");
+    }
+  );
+  context.subscriptions.push(disposable);
+
+  // Register modular vulnerability commands
+  registerVulnerabilityCommands(
+    context,
+    dependencyProvider,
+    packageTreeView,
+    updateDependencyStatusCounterUtil
   );
 
   // Register the FileInfoProvider
@@ -164,7 +173,7 @@ export function activate(context: vscode.ExtensionContext) {
   disposable = vscode.commands.registerCommand(
     "pkg-version.refreshFileInfo",
     () => {
-      console.log("Refresh file info command executed");
+      // Refresh file info
       fileInfoProvider.refresh();
       vscode.window.showInformationMessage("File info refreshed!");
     }
@@ -175,27 +184,11 @@ export function activate(context: vscode.ExtensionContext) {
   disposable = vscode.commands.registerCommand(
     "pkg-version.refreshDependencies",
     () => {
-      console.log("Refresh dependencies command executed");
+      // Refresh dependencies
       dependencyProvider.refresh();
       vscode.window.showInformationMessage("Dependencies refreshed!");
       // Status counter will be updated via the onDidChangeTreeData event
-    }
-  );
-  context.subscriptions.push(disposable);
-
-  // Register update package command
-  disposable = vscode.commands.registerCommand(
-    "pkg-version.updatePackage",
-    async (dependency) => {
-      // If dependency is not provided, it means the command was not triggered from a tree item
-      if (!dependency) {
-        vscode.window.showErrorMessage(
-          "Please select a package to update from the dependencies view"
-        );
-        return;
-      }
-
-      await dependencyProvider.updatePackage(dependency);
+      securityReportProvider.refresh();
     }
   );
   context.subscriptions.push(disposable);
@@ -501,133 +494,15 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(disposable);
+
   
-  // Register the check vulnerabilities command
-  disposable = vscode.commands.registerCommand(
-    "pkg-version.checkVulnerabilities",
-    async () => {
-      // Get the Snyk client
-      const snykClient = getSnykClient();
-      
-      // Check if token is configured
-      const isTokenValid = await snykClient.isTokenValid();
-      if (!isTokenValid) {
-        const configureToken = "Configure API Token";
-        const response = await vscode.window.showErrorMessage(
-          "Snyk API token not configured or invalid. Please configure a valid token to check for vulnerabilities.",
-          configureToken
-        );
-        
-        if (response === configureToken) {
-          vscode.commands.executeCommand(
-            "workbench.action.openSettings",
-            "pkgVersion.snykApiToken"
-          );
-        }
-        return;
-      }
-      
-      // Get all dependencies from the provider
-      const allDependencies = await dependencyProvider.getAllDependencies();
-      
-      // Filter out non-individual dependencies (package files, categories, etc.)
-      const packageDependencies = allDependencies.filter(
-        (dep: Dependency) => dep.label && dep.packageManager && !dep.children
-      );
-      
-      if (packageDependencies.length === 0) {
-        vscode.window.showInformationMessage(
-          "No package dependencies found to check for vulnerabilities."
-        );
-        return;
-      }
-      
-      // Show progress indicator
-      vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Notification,
-          title: "Checking for vulnerabilities",
-          cancellable: true,
-        },
-        async (progress, token) => {
-          let vulnerablePackages = 0;
-          let checkedPackages = 0;
-          let totalVulnerabilities = 0;
-          
-          // Calculate increment step for progress bar
-          const incrementStep = 100 / packageDependencies.length;
-          
-          for (let i = 0; i < packageDependencies.length; i++) {
-            if (token.isCancellationRequested) {
-              vscode.window.showInformationMessage(
-                "Vulnerability check cancelled."
-              );
-              break;
-            }
-            
-            const dependency = packageDependencies[i];
-            progress.report({
-              message: `Checking ${dependency.label} (${i + 1}/${
-                packageDependencies.length
-              })`,
-              increment: incrementStep,
-            });
-            
-            // Skip if no version
-            if (!dependency.label || !dependency.packageManager) {
-              continue;
-            }
-            
-            // Check for vulnerabilities
-            const vulnerabilities = await snykClient.checkPackageVulnerabilities(
-              dependency.label,
-              dependency.version || "",
-              dependency.packageManager || ""
-            );
-            
-            // Update the dependency with vulnerability info
-            if (vulnerabilities) {
-              // Check if it's an error object
-              if ('success' in vulnerabilities && vulnerabilities.success === false) {
-                // Only show console error since we've already shown a UI notification
-                console.error(`Error checking ${dependency.label}: ${vulnerabilities.error}`);
-              } 
-              // Check if it's an array of vulnerabilities
-              else if (Array.isArray(vulnerabilities) && vulnerabilities.length > 0) {
-                dependency.vulnerabilities = vulnerabilities;
-                vulnerablePackages++;
-                totalVulnerabilities += vulnerabilities.length;
-              }
-            }
-            
-            checkedPackages++;
-          }
-          
-          // Show summary
-          if (vulnerablePackages > 0) {
-            const viewDetails = "View Details";
-            const response = await vscode.window.showWarningMessage(
-              `Found ${totalVulnerabilities} vulnerabilities in ${vulnerablePackages} packages.`,
-              viewDetails
-            );
-            
-            if (response === viewDetails) {
-              // Refresh view to show vulnerability indicators
-              dependencyProvider.refresh();
-            }
-          } else {
-            vscode.window.showInformationMessage(
-              `No vulnerabilities found in ${checkedPackages} checked packages.`
-            );
-          }
-          
-          // Refresh the view to show vulnerability status
-          dependencyProvider.refresh();
-        }
-      );
-    }
-  );
-  context.subscriptions.push(disposable);
+  
+  // Vulnerability commands are registered via registerVulnerabilityCommands()
+  
+  // Clear vulnerability cache handled in modular commands
+  
+  // Export vulnerability report handled via modular commands
+  
   
   // Register generate requirements.txt from pyproject.toml command
   disposable = vscode.commands.registerCommand(
@@ -714,8 +589,57 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(disposable);
   
+  // Listen for configuration changes to refresh vulnerability providers
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("pkgVersion.useOSVProvider") ||
+          e.affectsConfiguration("pkgVersion.useGitHubAdvisoryProvider") ||
+          e.affectsConfiguration("pkgVersion.useSnykProvider") ||
+          e.affectsConfiguration("pkgVersion.snykApiToken") ||
+          e.affectsConfiguration("pkgVersion.snykOrgId")) {
+        refreshVulnerabilityProviderManager();
+      }
+    })
+  );
+  
+  // Scan on save feature
+  const config = vscode.workspace.getConfiguration("pkgVersion");
+  if (config.get<boolean>("scanOnSave")) {
+    let saveTimeout: NodeJS.Timeout | undefined;
+
+    const watcher = vscode.workspace.onDidSaveTextDocument((document) => {
+      // Check if it's a package file
+      const fileName = path.basename(document.fileName);
+      const packageFiles = [
+        "package.json",
+        "composer.json",
+        "pyproject.toml",
+        "requirements.txt",
+        "Cargo.toml",
+        "pom.xml",
+        "build.gradle",
+        "pubspec.yaml",
+      ];
+
+      if (packageFiles.includes(fileName)) {
+        // Clear existing timeout
+        if (saveTimeout) {
+          clearTimeout(saveTimeout);
+        }
+
+        // Set new timeout
+        const delay = config.get<number>("scanOnSaveDelay") || 2000;
+        saveTimeout = setTimeout(async () => {
+          await vscode.commands.executeCommand("pkg-version.checkVulnerabilities");
+        }, delay);
+      }
+    });
+
+    context.subscriptions.push(watcher);
+  }
+  
   // Initial update of dependency counter in the status bar
-  updateDependencyStatusCounter(dependencyProvider);
+  updateDependencyStatusCounterUtil(dependencyProvider);
 }
 
 
@@ -726,7 +650,7 @@ export function activate(context: vscode.ExtensionContext) {
  */
 export function deactivate() {
   // Nothing to clean up at this time
-  console.log("pkg-version extension deactivated");
+  // Extension deactivated
 }
 
 /**
@@ -735,73 +659,4 @@ export function deactivate() {
  * 
  * @param provider The dependency provider to get dependency information from
  */
-async function updateDependencyStatusCounter(provider: DependencyProvider) {
-  try {
-    // Get all outdated dependencies
-    const outdatedDeps = await provider.getAllOutdatedDependencies();
-    
-    // Categorize updates by type
-    const updateCounts = {
-      major: 0,
-      minor: 0,
-      patch: 0,
-      deprecated: 0
-    };
-
-    // Count updates by type
-    outdatedDeps.forEach(dep => {
-      if (dep.updateType === "major") {
-        updateCounts.major++;
-      } else if (dep.updateType === "minor") {
-        updateCounts.minor++;
-      } else if (dep.updateType === "patch") {
-        updateCounts.patch++;
-      }
-      // Note: deprecated packages would need to be identified separately
-      // This could be enhanced in the future with package registry data
-    });
-
-    const totalUpdates = updateCounts.major + updateCounts.minor + updateCounts.patch + updateCounts.deprecated;
-
-    if (totalUpdates === 0) {
-      // Show "up to date" status
-      dependencyStatusBarItem.text = "  $(package) $(check) Up to date  ";
-      dependencyStatusBarItem.tooltip = "All dependencies are up to date - Click to refresh";
-      dependencyStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.prominentBackground");
-    } else {
-      // Build status text with counts
-      const statusParts = [];
-      if (updateCounts.major > 0) {
-        statusParts.push(`${updateCounts.major} major`);
-      }
-      if (updateCounts.minor > 0) {
-        statusParts.push(`${updateCounts.minor} minor`);
-      }
-      if (updateCounts.patch > 0) {
-        statusParts.push(`${updateCounts.patch} patch`);
-      }
-      if (updateCounts.deprecated > 0) {
-        statusParts.push(`${updateCounts.deprecated} deprecated`);
-      }
-      
-      dependencyStatusBarItem.text = `  $(package) Package updates: ${statusParts.join(", ")}  `;
-      dependencyStatusBarItem.tooltip = `${totalUpdates} package update${totalUpdates === 1 ? '' : 's'} available - Click to refresh`;
-      
-      // Set background color based on highest priority update type
-      if (updateCounts.major > 0 || updateCounts.deprecated > 0) {
-        dependencyStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
-      } else if (updateCounts.minor > 0) {
-        dependencyStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
-      } else {
-        dependencyStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.prominentBackground");
-      }
-    }
-    
-    dependencyStatusBarItem.show();
-
-  } catch (error) {
-    console.error("Error updating dependency status bar:", error);
-    // In case of error, hide status bar item to avoid showing incorrect information
-    dependencyStatusBarItem.hide();
-  }
-}
+// Using updateDependencyStatusCounterUtil from utils/statusBar
