@@ -10,18 +10,18 @@ import { REGISTRY_URLS, API_TIMEOUTS } from "../config/registryUrls";
  *
  * @param packageName - The name of the npm package to check
  * @param currentVersion - Optional current version for cache key
- * @returns The latest version string or undefined if fetching fails
+ * @returns The latest version string or undefined if fetching fails, along with deprecated status
  */
 export async function fetchLatestNpmVersion(
   packageName: string,
   currentVersion?: string
-): Promise<string | undefined> {
+): Promise<{ version?: string; deprecated?: boolean } | undefined> {
   // Check cache first
   if (currentVersion) {
     const cache = getUpdateCache();
     const cached = cache.get(packageName, currentVersion, "npm");
     if (cached) {
-      return cached.latestVersion;
+      return { version: cached.latestVersion, deprecated: cached.deprecated };
     }
   }
 
@@ -33,15 +33,16 @@ export async function fetchLatestNpmVersion(
     );
     if (response.data && response.data.version) {
       const latestVersion = response.data.version;
-      
+      const deprecated = response.data.deprecated || false;
+
       // Cache the result if we have current version
       if (currentVersion && latestVersion) {
         const cache = getUpdateCache();
         const updateType = getUpdateType(currentVersion, latestVersion);
-        cache.set(packageName, currentVersion, "npm", latestVersion, updateType);
+        cache.set(packageName, currentVersion, "npm", latestVersion, updateType, deprecated);
       }
-      
-      return latestVersion;
+
+      return { version: latestVersion, deprecated };
     }
   } catch (error: any) {
     // Log specific error for debugging, but don't spam the user's window

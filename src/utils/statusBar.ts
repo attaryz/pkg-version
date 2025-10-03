@@ -48,6 +48,13 @@ export async function updateDependencyStatusCounter(provider: DependencyProvider
       }
     });
 
+    // Count deprecated packages from all dependencies
+    allDeps.forEach(dep => {
+      if (dep.deprecated) {
+        updateCounts.deprecated++;
+      }
+    });
+
     let vulnerabilityCount = 0;
     let criticalCount = 0;
     allDeps.forEach(dep => {

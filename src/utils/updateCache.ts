@@ -5,6 +5,7 @@ interface UpdateCacheEntry {
   latestVersion: string
   updateType: "major" | "minor" | "patch" | "prerelease" | "none"
   timestamp: number
+  deprecated?: boolean
 }
 
 /**
@@ -59,13 +60,15 @@ export class UpdateCache {
     currentVersion: string,
     packageManager: string,
     latestVersion: string,
-    updateType: "major" | "minor" | "patch" | "prerelease" | "none"
+    updateType: "major" | "minor" | "patch" | "prerelease" | "none",
+    deprecated?: boolean
   ): void {
     const key = this.getCacheKey(packageName, currentVersion, packageManager)
     this.cache.set(key, {
       latestVersion,
       updateType,
       timestamp: Date.now(),
+      deprecated,
     })
   }
 

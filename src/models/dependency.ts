@@ -27,6 +27,7 @@ export class Dependency extends vscode.TreeItem {
   public vulnerabilities?: Vulnerability[]; // Store security vulnerabilities
   public runtime?: string; // The runtime version info (e.g. Node 18)
   public language?: string; // Primary language of the project
+  public deprecated?: boolean; // Indicate if this package is deprecated
 
   /**
    * Creates a new Dependency tree item.
@@ -41,6 +42,7 @@ export class Dependency extends vscode.TreeItem {
    * @param parentFile - Optional parent file path
    * @param isDevDependency - Optional flag indicating if this is a dev dependency
    * @param vulnerabilities - Optional array of security vulnerabilities
+   * @param deprecated - Optional flag indicating if this package is deprecated
    */
   constructor(
     public readonly label: string, // Filename or package name
@@ -52,7 +54,8 @@ export class Dependency extends vscode.TreeItem {
     packageManager?: string, // Add package manager parameter
     parentFile?: string, // Add parent file path parameter
     isDevDependency?: boolean, // Add isDevDependency parameter
-    vulnerabilities?: Vulnerability[] // Add vulnerabilities parameter
+    vulnerabilities?: Vulnerability[], // Add vulnerabilities parameter
+    deprecated?: boolean // Add deprecated parameter
   ) {
     super(label, collapsibleState);
     this.latestVersion = latestVersion;
@@ -61,6 +64,7 @@ export class Dependency extends vscode.TreeItem {
     this.parentFile = parentFile;
     this.isDevDependency = isDevDependency;
     this.vulnerabilities = vulnerabilities;
+    this.deprecated = deprecated;
 
     const isManifestNode = !version; // Empty string means manifest file
 
@@ -145,6 +149,17 @@ export class Dependency extends vscode.TreeItem {
         this.description = `⚠️ ${version}${isDevDependency ? ' [dev]' : ''} (${vulnerabilities.length} vulnerabilities)`;
         this.contextValue = "vulnerable-dependency";
       }
+    } else if (!isManifestNode && this.deprecated) {
+      // Deprecated packages get special styling - crossed out appearance
+      this.iconPath = new vscode.ThemeIcon(
+        "trash",
+        new vscode.ThemeColor("errorForeground")
+      );
+      // Use strikethrough formatting for deprecated packages
+      this.label = `~~${label}~~`;
+      this.description = `🚫 DEPRECATED ${version}${isDevDependency ? ' [dev]' : ''}`;
+      this.tooltip = `${label}: ${version} (DEPRECATED PACKAGE)${isDevDependency ? ' [dev]' : ''}`;
+      this.contextValue = "deprecated-dependency";
     } else if (!isManifestNode && this.updateType && this.updateType !== "none") {
       // Use consistent emoji indicators for update types
       if (this.updateType === "major") {

@@ -185,7 +185,6 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
       // create dependency objects from the package info
       if (projectInfo && 
           allDependencies.length === 0 && 
-          filePath.endsWith('package.json') && 
           (projectInfo.dependencies || projectInfo.devDependencies)) {
           
         console.log('Using dependencies from package.json directly');
@@ -202,7 +201,9 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
               'none',
               'npm',
               filePath,
-              false
+              false,
+              undefined,
+              false // not deprecated - we don't have this info when parsing directly from package.json
             ));
           });
         }
@@ -218,14 +219,13 @@ export class DependencyProvider implements vscode.TreeDataProvider<Dependency> {
               'none',
               'npm',
               filePath,
-              true
+              true,
+              undefined,
+              false // not deprecated - we don't have this info when parsing directly from package.json
             ));
           });
         }
-        
-        console.log(`Created ${regularDeps.length} regular and ${devDeps.length} dev dependencies directly from package.json`);
       }
-      
       const result: Dependency[] = [];
       
       // Add "Project Info" category first

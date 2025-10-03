@@ -36,19 +36,21 @@ export async function getDepsInPackageJson(
         // Push the promise for creating the dependency
         depsPromises.push(
           (async () => {
-            const latestVersion = await fetchLatestNpmVersion(moduleName);
-            if (latestVersion) {
-              const updateType = getUpdateType(currentVersion, latestVersion);
+            const result = await fetchLatestNpmVersion(moduleName);
+            if (result && result.version) {
+              const updateType = getUpdateType(currentVersion, result.version);
               return new Dependency(
                 moduleName,
                 currentVersion,
                 vscode.TreeItemCollapsibleState.None,
                 undefined, // No resourceUri for individual deps
-                latestVersion,
+                result.version,
                 updateType,
                 "npm",
                 packageJsonUri.fsPath,
-                isDev
+                isDev,
+                undefined, // vulnerabilities
+                result.deprecated // deprecated flag
               );
             } else {
               // If fetch failed, create dependency without update info
@@ -61,7 +63,9 @@ export async function getDepsInPackageJson(
                 "none",
                 "npm",
                 packageJsonUri.fsPath,
-                isDev
+                isDev,
+                undefined, // vulnerabilities
+                false // not deprecated if we can't fetch info
               );
             }
           })()
