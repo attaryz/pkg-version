@@ -2,7 +2,7 @@
   "name": "pkg-version",
   "displayName": "Package Version Checker",
   "description": "Checks package versions in common manifest files (package.json, composer.json, requirements.txt, pyproject.toml, pubspec.yaml) for updates.",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "publisher": "Abdullah-Dev",
   "repository": {
     "type": "git",
@@ -97,8 +97,7 @@
         "command": "pkg-version.generateRequirementsTxt",
         "title": "Generate requirements.txt from Poetry",
         "icon": "$(file-add)"
-      }
-      ,
+      },
       {
         "command": "pkg-version.refreshSecurityReport",
         "title": "Refresh Security Report",
@@ -148,8 +147,7 @@
           "when": "view == packageDependencies",
           "group": "3_poetry@1",
           "icon": "$(file-add)"
-        }
-        ,
+        },
         {
           "command": "pkg-version.refreshSecurityReport",
           "when": "view == securityReportView",
@@ -300,7 +298,13 @@
         },
         "pkgVersion.hideVulnerabilitiesBelow": {
           "type": "string",
-          "enum": ["none", "low", "medium", "high", "critical"],
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
           "default": "none",
           "description": "Hide vulnerabilities below this severity level (none = show all)"
         }
