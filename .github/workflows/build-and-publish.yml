@@ -5,11 +5,6 @@ on:
     tags:
       - 'v*'  # Trigger on version tags like v1.0.0, v2.1.0, etc.
   workflow_dispatch:  # Allow manual triggering
-    inputs:
-      version:
-        description: 'Version to publish (e.g., 2.1.1)'
-        required: true
-        type: string
 
 jobs:
   build-and-publish:
@@ -35,11 +30,6 @@ jobs:
       run: |
         npm install -g @vscode/vsce
         npm install -g ovsx
-      
-    - name: Update version (manual trigger)
-      if: github.event_name == 'workflow_dispatch'
-      run: |
-        npm version ${{ github.event.inputs.version }} --no-git-tag-version
         
     - name: Build and package extension
       run: yarn package
