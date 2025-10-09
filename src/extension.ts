@@ -226,7 +226,23 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(disposable);
-  
+
+  // Register command to check for updates manually
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.checkUpdates",
+    async () => {
+      try {
+        dependencyProvider.refresh();
+        securityReportProvider.refresh();
+        await updateDependencyStatusCounterUtil(dependencyProvider);
+        vscode.window.showInformationMessage("Dependencies updated!");
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to check for updates: ${error}`);
+      }
+    }
+  );
+  context.subscriptions.push(disposable);
+
   // Register view package info command
   disposable = vscode.commands.registerCommand(
     "pkg-version.viewPackageInfo",
@@ -243,6 +259,29 @@ export function activate(context: vscode.ExtensionContext) {
         await dependencyProvider.viewPackageInfo(dependency);
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to view package info: ${error}`);
+      }
+    }
+  );
+  context.subscriptions.push(disposable);
+
+  // Register update single package command
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.updatePackage",
+    async (dependency: Dependency) => {
+      if (!dependency) {
+        vscode.window.showErrorMessage(
+          "Please select a package to update from the dependencies view"
+        );
+        return;
+      }
+
+      const success = await dependencyProvider.updatePackage(dependency);
+
+      if (success) {
+        vscode.window.showInformationMessage(
+          `${dependency.label} updated to ${dependency.latestVersion}`
+        );
+        dependencyProvider.refresh();
       }
     }
   );
