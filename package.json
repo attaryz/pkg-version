@@ -2,7 +2,7 @@
   "name": "pkg-version",
   "displayName": "Package Version Checker",
   "description": "Checks package versions in common manifest files (package.json, composer.json, requirements.txt, pyproject.toml, pubspec.yaml) for updates.",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "publisher": "Abdullah-Dev",
   "repository": {
     "type": "git",
@@ -86,6 +86,21 @@
       {
         "command": "pkg-version.scanPackageVulnerabilities",
         "title": "Scan for Vulnerabilities",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "pkg-version.addPackageToExcludeList",
+        "title": "Add to Exclude List",
+        "icon": "$(exclude)"
+      },
+      {
+        "command": "pkg-version.refreshManifestFile",
+        "title": "Refresh Dependencies for This File",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pkg-version.scanManifestVulnerabilities",
+        "title": "Scan This File for Vulnerabilities",
         "icon": "$(shield)"
       },
       {
@@ -181,6 +196,21 @@
           "command": "pkg-version.scanPackageVulnerabilities",
           "when": "view == packageDependencies && (viewItem == dependency || viewItem == package-dependency || viewItem == vulnerable-dependency)",
           "group": "3_security"
+        },
+        {
+          "command": "pkg-version.addPackageToExcludeList",
+          "when": "view == packageDependencies && (viewItem == dependency || viewItem == package-dependency || viewItem == vulnerable-dependency)",
+          "group": "4_exclusion"
+        },
+        {
+          "command": "pkg-version.refreshManifestFile",
+          "when": "view == packageDependencies && viewItem == manifestFile",
+          "group": "1_refresh"
+        },
+        {
+          "command": "pkg-version.scanManifestVulnerabilities",
+          "when": "view == packageDependencies && viewItem == manifestFile",
+          "group": "2_security"
         }
       ],
       "explorer/context": [
@@ -323,26 +353,26 @@
     "package-and-install": "yarn install && yarn package && code --install-extension pkg-version-2.6.0.vsix"
   },
   "dependencies": {
-    "axios": "^1.8.4",
-    "js-yaml": "^4.1.0",
-    "semver": "^7.7.1"
+    "axios": "^1.13.2",
+    "js-yaml": "^4.1.1",
+    "semver": "^7.7.3"
   },
   "devDependencies": {
     "@secretlint/secretlint-formatter-sarif": "^11.2.4",
     "@secretlint/secretlint-rule-no-dotenv": "^11.2.4",
     "@secretlint/secretlint-rule-preset-recommend": "^11.2.4",
-    "@types/glob": "^8.1.0",
     "@types/js-yaml": "^4.0.9",
     "@types/mocha": "^10.0.1",
-    "@types/node": "20.x",
+    "@types/node": "^24.10.1",
     "@types/semver": "^7.7.0",
     "@types/vscode": "^1.80.0",
     "@vscode/test-electron": "^2.3.3",
     "@vscode/vsce": "^3.6.2",
     "esbuild": "^0.25.2",
     "eslint": "^8.44.0",
-    "glob": "^10.3.3",
+    "glob": "^13.0.0",
     "mocha": "^10.2.0",
     "typescript": "^5.1.6"
-  }
+  },
+  "packageManager": "yarn@4.12.0"
 }
