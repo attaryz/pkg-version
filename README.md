@@ -6,10 +6,22 @@
 
 Check and update package dependencies across multiple package managers. Scan for security vulnerabilities with built-in OSV.dev integration.
 
+## What's New in 3.0.0 🚀
+
+**Major Performance Overhaul** - Version 3.0.0 delivers dramatic performance improvements:
+- **98% reduction** in vendor directory scanning (250+ files → 1-3 files)
+- **95% reduction** in package checks for PHP projects (200+ → ~10 packages)
+- **80% reduction** in manifest scans on startup
+- Fixed all folder exclusion issues - node_modules and vendor properly excluded
+- Improved caching system for faster dependency loading
+- Added Cargo/Rust support
+
+[See full changelog](CHANGELOG.md#300---2024-12-04)
+
 ## Features
 
 ### 📦 Package Management
-- **Multi-ecosystem support**: npm, Yarn, PNPM, Composer, pip, Poetry, pub.dev
+- **Multi-ecosystem support**: npm, Yarn, PNPM, Composer, pip, Poetry, pub.dev, Cargo
 - **Update indicators**: Visual badges for major, minor, and patch updates
 - **One-click updates**: Update individual packages or all at once
 - **Status bar counter**: Shows outdated packages at a glance
@@ -70,6 +82,7 @@ Check and update package dependencies across multiple package managers. Scan for
 | pip | `requirements.txt` | pypi.org |
 | Poetry | `pyproject.toml` | pypi.org |
 | Dart/Flutter | `pubspec.yaml` | pub.dev |
+| Cargo (Rust) | `Cargo.toml` | crates.io |
 
 ## Settings
 

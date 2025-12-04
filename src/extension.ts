@@ -17,10 +17,22 @@ import { SecurityReportProvider } from "./securityReportProvider";
  * Ensures that default exclusion settings are properly applied to prevent
  * scanning of large folders like node_modules, which could impact performance.
  * This adds critical exclusions if they're not already configured.
+ * IMPORTANT: This preserves user-added exclusions.
  */
 async function ensureDefaultExclusions() {
   const config = vscode.workspace.getConfiguration("pkgVersion");
-  const currentExclusions: string[] = config.get("excludeFolders") || [];
+  
+  // Use inspect to get the actual global value (user settings)
+  const inspection = config.inspect<string[]>("excludeFolders");
+  const globalValue = inspection?.globalValue;
+  const defaultValue = inspection?.defaultValue || [];
+  
+  // If user has never set this, globalValue will be undefined
+  // In that case, we use the default value
+  const currentExclusions: string[] = globalValue ? [...globalValue] : [...defaultValue];
+  
+  console.log(`Current exclusions count: ${currentExclusions.length}`);
+  console.log(`Has global value: ${!!globalValue}`);
 
   // Basic default exclusions that should always be present
   const requiredExclusions = [
@@ -42,9 +54,12 @@ async function ensureDefaultExclusions() {
 
   // Check if any required exclusions are missing
   let needsUpdate = false;
+  const addedExclusions: string[] = [];
+  
   for (const exclusion of requiredExclusions) {
     if (!currentExclusions.includes(exclusion)) {
       currentExclusions.push(exclusion);
+      addedExclusions.push(exclusion);
       needsUpdate = true;
     }
   }
@@ -56,16 +71,20 @@ async function ensureDefaultExclusions() {
     // Replace old vendor exclusion with new nested vendor exclusion
     currentExclusions[indexOfOldVendor] = "**/vendor/**/vendor/**";
     needsUpdate = true;
+    console.log("Updated old vendor exclusion pattern");
   }
 
   // Update the configuration if needed
   if (needsUpdate) {
+    console.log(`Adding ${addedExclusions.length} missing default exclusions`);
     await config.update(
       "excludeFolders",
       currentExclusions,
       vscode.ConfigurationTarget.Global
     );
-    // Updated default exclusions
+    console.log(`Updated exclusions. New count: ${currentExclusions.length}`);
+  } else {
+    console.log("No default exclusions needed to be added");
   }
 
   // Ensure scanVendorDirectory is set to true by default
@@ -76,7 +95,7 @@ async function ensureDefaultExclusions() {
       true,
       vscode.ConfigurationTarget.Global
     );
-    // Set scanVendorDirectory to true by default
+    console.log("Set scanVendorDirectory to true by default");
   }
 
   // Ensure composerPackageDetection is set to "auto" by default
@@ -87,7 +106,7 @@ async function ensureDefaultExclusions() {
       "auto",
       vscode.ConfigurationTarget.Global
     );
-    // Set composerPackageDetection to 'auto' by default
+    console.log("Set composerPackageDetection to 'auto' by default");
   }
 }
 
@@ -388,7 +407,11 @@ export function activate(context: vscode.ExtensionContext) {
 
       const folder = folders[0];
       const config = vscode.workspace.getConfiguration("pkgVersion");
-      const excludeFolders: string[] = config.get("excludeFolders") || [];
+      
+      // Get current exclusions from the actual configuration
+      // Use inspect to get the global value specifically
+      const inspection = config.inspect<string[]>("excludeFolders");
+      const excludeFolders: string[] = [...(inspection?.globalValue || inspection?.defaultValue || [])];
 
       // Get the folder path relative to the workspace if possible
       let folderPath = folder.fsPath;
@@ -411,13 +434,19 @@ export function activate(context: vscode.ExtensionContext) {
       // Add to exclusion list if not already there
       if (!excludeFolders.includes(globPattern)) {
         excludeFolders.push(globPattern);
+        
+        // Save to global settings
         await config.update(
           "excludeFolders",
           excludeFolders,
           vscode.ConfigurationTarget.Global
         );
+        
+        console.log(`Added exclusion pattern: ${globPattern}`);
+        console.log(`Total exclusions: ${excludeFolders.length}`);
+        
         vscode.window.showInformationMessage(
-          `Added "${folderPath}" to the excluded folders list`
+          `Added "${folderPath}" to the excluded folders list (saved to User Settings)`
         );
         
         // Refresh the tree view to apply the new exclusion
@@ -439,12 +468,17 @@ export function activate(context: vscode.ExtensionContext) {
     "pkg-version.manageExclusions",
     async () => {
       const config = vscode.workspace.getConfiguration("pkgVersion");
-      const excludeFolders: string[] = config.get("excludeFolders") || [];
+      
+      // Use inspect to get the actual global value
+      const inspection = config.inspect<string[]>("excludeFolders");
+      const excludeFolders: string[] = [...(inspection?.globalValue || inspection?.defaultValue || [])];
       
       if (excludeFolders.length === 0) {
         vscode.window.showInformationMessage("No folders are currently excluded");
         return;
       }
+      
+      console.log(`Managing ${excludeFolders.length} exclusions`);
       
       // Show the excluded folders with options to remove
       const selectedFolder = await vscode.window.showQuickPick(
@@ -468,6 +502,9 @@ export function activate(context: vscode.ExtensionContext) {
       const folderToRemove = (selectedFolder as any).folder;
       const updatedExclusions = excludeFolders.filter(f => f !== folderToRemove);
       
+      console.log(`Removing exclusion: ${folderToRemove}`);
+      console.log(`Remaining exclusions: ${updatedExclusions.length}`);
+      
       await config.update(
         "excludeFolders",
         updatedExclusions,
@@ -475,7 +512,7 @@ export function activate(context: vscode.ExtensionContext) {
       );
       
       vscode.window.showInformationMessage(
-        `Removed "${folderToRemove}" from excluded folders`
+        `Removed "${folderToRemove}" from excluded folders (saved to User Settings)`
       );
       
       // Refresh the tree view to apply the updated exclusions
@@ -509,18 +546,25 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       const config = vscode.workspace.getConfiguration("pkgVersion");
-      const excludeFolders: string[] = config.get("excludeFolders") || [];
+      
+      // Use inspect to get the actual global value
+      const inspection = config.inspect<string[]>("excludeFolders");
+      const excludeFolders: string[] = [...(inspection?.globalValue || inspection?.defaultValue || [])];
 
       // Add to exclusion list if not already there
       if (!excludeFolders.includes(pattern)) {
         excludeFolders.push(pattern);
+        
+        console.log(`Adding custom exclusion pattern: ${pattern}`);
+        console.log(`Total exclusions: ${excludeFolders.length}`);
+        
         await config.update(
           "excludeFolders",
           excludeFolders,
           vscode.ConfigurationTarget.Global
         );
         vscode.window.showInformationMessage(
-          `Added "${pattern}" to the excluded patterns list`
+          `Added "${pattern}" to the excluded patterns list (saved to User Settings)`
         );
         
         // Refresh the tree view to apply the new exclusion
@@ -534,6 +578,91 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(disposable);
 
+  /**
+   * Command to remove a file/folder from the exclude list
+   * This is shown in the context menu of excluded manifest files
+   */
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.removeFromExcludeList",
+    async (dependency: Dependency) => {
+      if (!dependency || !dependency.resourceUri) {
+        vscode.window.showErrorMessage("Please select an excluded item to restore");
+        return;
+      }
+
+      const filePath = dependency.resourceUri.fsPath;
+      const relativePath = vscode.workspace.asRelativePath(dependency.resourceUri);
+      
+      const config = vscode.workspace.getConfiguration("pkgVersion");
+      const inspection = config.inspect<string[]>("excludeFolders");
+      const excludeFolders: string[] = [...(inspection?.globalValue || inspection?.defaultValue || [])];
+
+      // Find which pattern matches this file
+      const { matchesGlobPattern } = require("./utils/fileUtils");
+      const normalizedPath = filePath.replace(/\\/g, "/");
+      const matchingPatterns: string[] = [];
+      
+      for (const pattern of excludeFolders) {
+        if (matchesGlobPattern(normalizedPath, pattern)) {
+          matchingPatterns.push(pattern);
+        }
+      }
+
+      if (matchingPatterns.length === 0) {
+        vscode.window.showWarningMessage(`No exclusion pattern found for ${relativePath}`);
+        return;
+      }
+
+      // If multiple patterns match, let user choose which to remove
+      let patternToRemove: string;
+      if (matchingPatterns.length === 1) {
+        patternToRemove = matchingPatterns[0];
+      } else {
+        const selected = await vscode.window.showQuickPick(
+          matchingPatterns.map(p => ({ label: p, pattern: p })),
+          {
+            placeHolder: "Multiple patterns match this file. Select which one to remove:",
+          }
+        );
+        if (!selected) {
+          return;
+        }
+        patternToRemove = selected.pattern;
+      }
+
+      // Confirm removal
+      const confirmResult = await vscode.window.showWarningMessage(
+        `Remove exclusion pattern "${patternToRemove}"?\n\nThis will allow "${relativePath}" to be scanned for packages.`,
+        { modal: true },
+        "Yes",
+        "No"
+      );
+
+      if (confirmResult !== "Yes") {
+        return;
+      }
+
+      // Remove the pattern
+      const updatedExclusions = excludeFolders.filter(p => p !== patternToRemove);
+
+      console.log(`Removing exclusion pattern: ${patternToRemove}`);
+      console.log(`Remaining exclusions: ${updatedExclusions.length}`);
+
+      await config.update(
+        "excludeFolders",
+        updatedExclusions,
+        vscode.ConfigurationTarget.Global
+      );
+
+      vscode.window.showInformationMessage(
+        `Removed exclusion pattern "${patternToRemove}". File will now be scanned.`
+      );
+
+      // Refresh the tree view
+      dependencyProvider.refresh();
+    }
+  );
+  context.subscriptions.push(disposable);
   
   
   // Vulnerability commands are registered via registerVulnerabilityCommands()
@@ -543,6 +672,249 @@ export function activate(context: vscode.ExtensionContext) {
   // Export vulnerability report handled via modular commands
   
   
+  // Register command to add a package to the exclude list
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.addPackageToExcludeList",
+    async (dependency: Dependency) => {
+      if (!dependency || !dependency.label) {
+        vscode.window.showErrorMessage("Please select a package to exclude");
+        return;
+      }
+
+      const packageName = dependency.label;
+      
+      // Confirm before adding to exclude list
+      const confirmResult = await vscode.window.showWarningMessage(
+        `Add "${packageName}" to the exclude list? This package will be hidden from the dependency tree.`,
+        { modal: true },
+        "Yes",
+        "No"
+      );
+      
+      if (confirmResult !== "Yes") {
+        return;
+      }
+
+      try {
+        const config = vscode.workspace.getConfiguration("pkgVersion");
+        const excludeFolders: string[] = config.get("excludeFolders") || [];
+        
+        // Create a pattern to exclude this specific package name
+        const excludePattern = `**/${packageName}`;
+        
+        if (!excludeFolders.includes(excludePattern)) {
+          excludeFolders.push(excludePattern);
+          await config.update(
+            "excludeFolders",
+            excludeFolders,
+            vscode.ConfigurationTarget.Global
+          );
+          vscode.window.showInformationMessage(
+            `Added "${packageName}" to the exclude list`
+          );
+          
+          // Refresh the tree view
+          dependencyProvider.refresh();
+        } else {
+          vscode.window.showInformationMessage(
+            `"${packageName}" is already in the exclude list`
+          );
+        }
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to add package to exclude list: ${error}`);
+      }
+    }
+  );
+  context.subscriptions.push(disposable);
+
+  // Register command to refresh dependencies for a specific manifest file
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.refreshManifestFile",
+    async (manifestDependency: Dependency) => {
+      if (!manifestDependency || !manifestDependency.resourceUri) {
+        vscode.window.showErrorMessage("Please select a manifest file to refresh");
+        return;
+      }
+
+      try {
+        const fileName = path.basename(manifestDependency.resourceUri.fsPath);
+        vscode.window.showInformationMessage(`Refreshing dependencies for ${fileName}...`);
+        
+        // Refresh the entire tree (VS Code will re-fetch children for this node)
+        dependencyProvider.refresh();
+        
+        vscode.window.showInformationMessage(`Dependencies for ${fileName} refreshed!`);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to refresh manifest file: ${error}`);
+      }
+    }
+  );
+  context.subscriptions.push(disposable);
+
+  // Register command to scan a specific manifest file for vulnerabilities
+  disposable = vscode.commands.registerCommand(
+    "pkg-version.scanManifestVulnerabilities",
+    async (manifestDependency: Dependency) => {
+      if (!manifestDependency || !manifestDependency.resourceUri) {
+        vscode.window.showErrorMessage("Please select a manifest file to scan");
+        return;
+      }
+
+      try {
+        const fileName = path.basename(manifestDependency.resourceUri.fsPath);
+        const filePath = manifestDependency.resourceUri.fsPath;
+        
+        // Get all dependencies from this manifest file
+        let allDependencies: Dependency[] = [];
+        
+        if (filePath.endsWith("package.json")) {
+          const { getDepsInPackageJson } = require("./parsers/npmParser");
+          allDependencies = await getDepsInPackageJson(manifestDependency.resourceUri);
+        } else if (filePath.endsWith("composer.json")) {
+          const { getDepsInComposerJson } = require("./parsers/composerParser");
+          allDependencies = await getDepsInComposerJson(manifestDependency.resourceUri);
+        } else if (filePath.endsWith("requirements.txt")) {
+          const { getDepsInRequirementsTxt } = require("./parsers/pythonParser");
+          allDependencies = await getDepsInRequirementsTxt(manifestDependency.resourceUri);
+        } else if (filePath.endsWith("pyproject.toml")) {
+          const { getDepsInPyprojectToml } = require("./parsers/poetryParser");
+          allDependencies = await getDepsInPyprojectToml(manifestDependency.resourceUri);
+        } else if (filePath.endsWith("Cargo.toml")) {
+          const { getDepsInCargoToml } = require("./parsers/cargoParser");
+          allDependencies = await getDepsInCargoToml(manifestDependency.resourceUri);
+        } else if (filePath.endsWith("pubspec.yaml")) {
+          const { getDepsInPubspecYaml } = require("./parsers/dartParser");
+          allDependencies = await getDepsInPubspecYaml(manifestDependency.resourceUri);
+        } else {
+          vscode.window.showErrorMessage(`Unsupported manifest file type: ${fileName}`);
+          return;
+        }
+
+        const packageDependencies = allDependencies.filter(
+          (dep: Dependency) => dep.label && dep.packageManager && !dep.children
+        );
+
+        if (packageDependencies.length === 0) {
+          vscode.window.showInformationMessage(
+            `No dependencies found in ${fileName}`
+          );
+          return;
+        }
+
+        const { getVulnerabilityProviderManager } = require("./utils/vulnerabilityProviderManager");
+        const providerManager = getVulnerabilityProviderManager();
+        
+        const hasProvider = await providerManager.hasReadyProvider();
+        
+        if (!hasProvider) {
+          const configureSettings = "Configure Settings";
+          const response = await vscode.window.showWarningMessage(
+            "No vulnerability providers are configured. OSV.dev works without configuration, or you can configure Snyk.",
+            configureSettings
+          );
+          
+          if (response === configureSettings) {
+            vscode.commands.executeCommand(
+              "workbench.action.openSettings",
+              "pkgVersion.vulnerability"
+            );
+          }
+          return;
+        }
+
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Scanning ${fileName} for vulnerabilities`,
+            cancellable: true,
+          },
+          async (progress, token) => {
+            let vulnerablePackages = 0;
+            let checkedPackages = 0;
+            let totalVulnerabilities = 0;
+            
+            const incrementStep = 100 / packageDependencies.length;
+            
+            for (let i = 0; i < packageDependencies.length; i++) {
+              if (token.isCancellationRequested) {
+                vscode.window.showInformationMessage(
+                  "Vulnerability check cancelled."
+                );
+                break;
+              }
+              
+              const dependency = packageDependencies[i];
+              progress.report({
+                message: `Checking ${dependency.label} (${i + 1}/${
+                  packageDependencies.length
+                })`,
+                increment: incrementStep,
+              });
+              
+              if (!dependency.label || !dependency.packageManager) {
+                continue;
+              }
+              
+              const { resolveInstalledVersion, cleanVersionSpecifier } = require("./utils/installedVersion");
+              const effectiveVersion =
+                (await resolveInstalledVersion(dependency)) ||
+                cleanVersionSpecifier(dependency.version) ||
+                "";
+
+              const vulnerabilities = await providerManager.checkPackageVulnerabilities(
+                dependency.label,
+                effectiveVersion,
+                dependency.packageManager || ""
+              );
+              
+              if (vulnerabilities) {
+                if ('success' in vulnerabilities && vulnerabilities.success === false) {
+                  // Error checking package
+                } else if (Array.isArray(vulnerabilities)) {
+                  dependency.vulnerabilities = vulnerabilities;
+                  checkedPackages++;
+                  
+                  if (vulnerabilities.length > 0) {
+                    vulnerablePackages++;
+                    totalVulnerabilities += vulnerabilities.length;
+                  }
+                }
+              }
+            }
+            
+            if (vulnerablePackages > 0) {
+              const viewDetails = "View Details";
+              const response = await vscode.window.showWarningMessage(
+                `Found ${totalVulnerabilities} vulnerabilities in ${vulnerablePackages} packages in ${fileName}.`,
+                viewDetails
+              );
+              
+              if (response === viewDetails) {
+                dependencyProvider.refresh();
+              }
+            } else {
+              vscode.window.showInformationMessage(
+                `No vulnerabilities found in ${checkedPackages} packages from ${fileName}.`
+              );
+            }
+            
+            dependencyProvider.refresh();
+            updateDependencyStatusCounterUtil(dependencyProvider);
+            
+            try {
+              await vscode.commands.executeCommand("pkg-version.refreshSecurityReport");
+            } catch {
+              // Failed to refresh Security Report view
+            }
+          }
+        );
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to scan manifest file: ${error}`);
+      }
+    }
+  );
+  context.subscriptions.push(disposable);
+
   // Register generate requirements.txt from pyproject.toml command
   disposable = vscode.commands.registerCommand(
     "pkg-version.generateRequirementsTxt",
@@ -641,10 +1013,12 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
   
-  // Scan on save feature
+  // Scan on save feature - with improved debouncing and exclusion checking
   const config = vscode.workspace.getConfiguration("pkgVersion");
   if (config.get<boolean>("scanOnSave")) {
     let saveTimeout: NodeJS.Timeout | undefined;
+    let lastScanTime = 0;
+    const minScanInterval = 5000; // Minimum 5 seconds between scans
 
     const watcher = vscode.workspace.onDidSaveTextDocument((document) => {
       // Check if it's a package file
@@ -661,6 +1035,20 @@ export function activate(context: vscode.ExtensionContext) {
       ];
 
       if (packageFiles.includes(fileName)) {
+        // Check if file is excluded
+        const { isFileExcluded } = require("./utils/fileUtils");
+        if (isFileExcluded(document.fileName)) {
+          console.log(`[SaveWatcher] Skipping excluded file: ${document.fileName}`);
+          return;
+        }
+
+        // Rate limiting: prevent scans more frequent than minScanInterval
+        const now = Date.now();
+        if (now - lastScanTime < minScanInterval) {
+          console.log(`[SaveWatcher] Skipping scan - too soon after last scan (${now - lastScanTime}ms)`);
+          return;
+        }
+
         // Clear existing timeout
         if (saveTimeout) {
           clearTimeout(saveTimeout);
@@ -669,7 +1057,12 @@ export function activate(context: vscode.ExtensionContext) {
         // Set new timeout
         const delay = config.get<number>("scanOnSaveDelay") || 2000;
         saveTimeout = setTimeout(async () => {
-          await vscode.commands.executeCommand("pkg-version.checkVulnerabilities");
+          console.log(`[SaveWatcher] Triggering scan for ${fileName}`);
+          lastScanTime = Date.now();
+          
+          // Only refresh dependencies, don't trigger full vulnerability scan
+          // User can manually trigger vulnerability scan if needed
+          dependencyProvider.refresh();
         }, delay);
       }
     });
@@ -677,8 +1070,8 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(watcher);
   }
   
-  // Initial update of dependency counter in the status bar
-  updateDependencyStatusCounterUtil(dependencyProvider);
+  // Status bar will update automatically as dependencies are loaded
+  // via the onDidChangeTreeData event listener set up earlier
 }
 
 

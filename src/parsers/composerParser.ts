@@ -11,8 +11,8 @@ let hasShownComposerWarning = false;
 
 /**
  * Parses a composer.json file and extracts all dependencies with their versions.
- * For each dependency, fetches the latest version from Packagist and
- * determines the update type.
+ * Creates dependency objects WITHOUT fetching latest versions for faster initial load.
+ * Versions will be fetched in the background by the DependencyProvider.
  *
  * @param composerJsonUri - URI of the composer.json file
  * @returns Promise resolving to array of dependencies
@@ -37,9 +37,9 @@ export async function getDepsInComposerJson(
     const buffer = await vscode.workspace.fs.readFile(composerJsonUri);
     const content = Buffer.from(buffer).toString("utf8");
     const json = JSON.parse(content);
-    let depsPromises: Promise<Dependency | null>[] = [];
+    let deps: Dependency[] = [];
 
-    const processComposerDependencies = async (
+    const processComposerDependencies = (
       dependencies: { [key: string]: string } | undefined,
       isDev: boolean
     ) => {
@@ -56,51 +56,27 @@ export async function getDepsInComposerJson(
           continue; // Skip platform requirements
         }
 
-        depsPromises.push(
-          (async () => {
-            const latestVersion = await fetchLatestPackagistVersion(
-              moduleName
-            );
-            if (latestVersion) {
-              // Note: Composer version constraints can be complex (^, ~, >).
-              // getUpdateType uses basic semver comparison. More robust check might be needed.
-              const updateType = getUpdateType(currentVersion, latestVersion);
-              return new Dependency(
-                moduleName,
-                currentVersion,
-                vscode.TreeItemCollapsibleState.None,
-                undefined,
-                latestVersion,
-                updateType,
-                "composer",
-                composerJsonUri.fsPath,
-                isDev
-              );
-            } else {
-              return new Dependency(
-                moduleName,
-                currentVersion,
-                vscode.TreeItemCollapsibleState.None,
-                undefined,
-                undefined,
-                "none",
-                "composer",
-                composerJsonUri.fsPath,
-                isDev
-              );
-            }
-          })()
-        );
+        // Create dependency without fetching version (will be loaded in background)
+        deps.push(new Dependency(
+          moduleName,
+          currentVersion,
+          vscode.TreeItemCollapsibleState.None,
+          undefined,
+          undefined, // latestVersion - will be loaded in background
+          "none", // updateType - will be determined when version is loaded
+          "composer",
+          composerJsonUri.fsPath,
+          isDev
+        ));
       }
     };
 
-    await processComposerDependencies(json.require, false);
-    await processComposerDependencies(json["require-dev"], true);
+    processComposerDependencies(json.require, false);
+    processComposerDependencies(json["require-dev"], true);
 
     // TODO: Add support for additional Composer dependency sections
 
-    const resolvedDeps = await Promise.all(depsPromises);
-    return resolvedDeps.filter((d): d is Dependency => d !== null);
+    return deps;
   } catch (err: any) {
     console.error(`Error reading or parsing ${composerJsonUri.fsPath}:`, err);
     vscode.window.showErrorMessage(

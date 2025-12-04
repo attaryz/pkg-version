@@ -16,7 +16,7 @@ export class UpdateCache {
   private cache: Map<string, UpdateCacheEntry> = new Map()
   private ttl: number // Time to live in milliseconds
 
-  constructor(ttlMinutes: number = 30) {
+  constructor(ttlMinutes: number = 5) {
     this.ttl = ttlMinutes * 60 * 1000 // Convert to milliseconds
   }
 
@@ -118,7 +118,7 @@ let cacheInstance: UpdateCache | undefined
  */
 export function getUpdateCache(): UpdateCache {
   if (!cacheInstance) {
-    cacheInstance = new UpdateCache(30) // 30 minutes TTL
+    cacheInstance = new UpdateCache(5) // 5 minutes TTL (reduced from 30 for fresher data)
   }
   return cacheInstance
 }

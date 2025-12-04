@@ -20,7 +20,8 @@ export function pathExists(p: string): boolean {
  * Gets the exclude pattern from configuration for VS Code findFiles API.
  * Converts the array of exclude patterns into a format VS Code can use.
  *
- * @returns A comma-separated string of glob patterns to exclude
+ * @returns A comma-separated string of glob patterns to exclude (legacy, use getExcludePatternForVSCode instead)
+ * @deprecated Use getExcludePatternForVSCode() for proper VS Code glob format
  */
 export function getExcludePattern(): string {
   const configuration = vscode.workspace.getConfiguration("pkgVersion");
@@ -33,22 +34,55 @@ export function getExcludePattern(): string {
     "**/.dart_tool/**",
   ];
 
-  // Ensure paths are properly formatted for VSCode's globbing
-  const formattedPatterns = excludeFolders.map(pattern => {
-    // Make sure patterns have ** at both ends for proper glob matching
-    if (!pattern.startsWith("**")) {
-      pattern = `**/${pattern}`;
-    }
-    if (!pattern.endsWith("**") && !pattern.endsWith("*")) {
-      pattern = `${pattern}/**`;
-    }
-    console.log(`Formatted exclusion pattern: ${pattern}`);
-    return pattern;
-  });
+  // Return patterns as-is - they should already be properly formatted
+  // Don't modify them as it can break file-specific patterns like **/*.lock
+  console.log(`Using ${excludeFolders.length} exclusion patterns`);
+  const formattedPatterns = excludeFolders;
 
   // For VS Code findFiles, return a single pattern if there's only one
   // Otherwise, return a comma-separated list which VS Code handles properly
   return formattedPatterns.join(",");
+}
+
+/**
+ * Gets the exclude pattern in the proper format for VS Code's findFiles API.
+ * Returns a brace-expanded pattern that VS Code can properly parse.
+ *
+ * @returns A brace-expanded glob pattern string like "{pattern1,pattern2,pattern3}"
+ */
+export function getExcludePatternForVSCode(): string {
+  const configuration = vscode.workspace.getConfiguration("pkgVersion");
+  const excludeFolders: string[] = configuration.get("excludeFolders") || [
+    "**/node_modules/**",
+    "**/vendor/**",
+    "**/venv/**",
+    "**/.git/**",
+    "**/build/**",
+    "**/.dart_tool/**",
+  ];
+
+  // Always include critical exclusions that should never be scanned
+  const criticalExclusions = [
+    "**/node_modules/**",
+    "**/venv/**",
+    "**/.git/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/.next/**",
+    "**/.nuxt/**",
+    "**/bin/**",
+    "**/__pycache__/**",
+    "**/.dart_tool/**",
+    "**/vendor/*/**" // Exclude nested vendor files
+  ];
+
+  // Merge user exclusions with critical ones, removing duplicates
+  const allExclusions = [...new Set([...criticalExclusions, ...excludeFolders])];
+
+  console.log(`[fileUtils] Using ${allExclusions.length} exclusion patterns for VS Code`);
+
+  // Return in brace-expanded format that VS Code understands
+  return `{${allExclusions.join(",")}}`;
 }
 
 /**
@@ -65,80 +99,73 @@ export function isFileExcluded(filePath: string): boolean {
   // Normalize path for consistent comparison (use forward slashes)
   const normalizedPath = filePath.replace(/\\/g, "/");
 
-  // Check common exclusions first for performance (most common use case)
-  if (normalizedPath.includes("/node_modules/")) {
-    return true;
-  }
-
-  // Check for other common directories directly similar to node_modules check
-  if (normalizedPath.includes("/vendor/") && 
-      !normalizedPath.endsWith("/vendor") && 
-      normalizedPath.split("/").pop() !== "vendor") {
-    console.log(`Excluded vendor path: ${normalizedPath}`);
-    return true;
-  }
-
-  if (normalizedPath.includes("/venv/")) {
-    console.log(`Excluded venv path: ${normalizedPath}`);
-    return true;
-  }
-
-  if (normalizedPath.includes("/.git/")) {
-    console.log(`Excluded git path: ${normalizedPath}`);
-    return true;
-  }
-
-  if (normalizedPath.includes("/build/")) {
-    console.log(`Excluded build path: ${normalizedPath}`);
-    return true;
-  }
-
-  if (normalizedPath.includes("/.dart_tool/")) {
-    console.log(`Excluded dart_tool path: ${normalizedPath}`);
-    return true;
-  }
-
   // Check if the path matches any exclude pattern
   for (const pattern of excludeFolders) {
-    // For patterns like **/{path}/** - extract the actual folder path
-    if (pattern.startsWith("**/") && pattern.endsWith("/**")) {
-      const folderPath = pattern.substring(3, pattern.length - 3);
-      // Check if the normalized path contains this folder path segment
-      if (folderPath && normalizedPath.includes(`/${folderPath}/`)) {
-        console.log(`Excluded by extracted folder path ${folderPath}: ${normalizedPath}`);
-        return true;
-      }
-    } else {
-      // Convert glob pattern to a regex pattern for other pattern types
-      const regexPattern = pattern
-        .replace(/\*\*/g, ".*") // ** becomes .* (any characters)
-        .replace(/\*/g, "[^/]*") // * becomes [^/]* (any characters except /)
-        .replace(/\?/g, "[^/]") // ? becomes [^/] (any single character except /)
-        .replace(/\./g, "\\.") // Escape dots
-        .replace(/\//g, "\\/"); // Escape slashes
-
-      try {
-        const regex = new RegExp(regexPattern, "i"); // Case insensitive
-        if (regex.test(normalizedPath)) {
-          console.log(`Excluded by pattern ${pattern}: ${normalizedPath}`);
-          return true;
-        }
-      } catch (e) {
-        // If regex creation fails, fall back to simple include check
-        // Remove glob patterns and check for path inclusion
-        const simplePattern = pattern
-          .replace(/\*\*/g, "")
-          .replace(/\*/g, "")
-          .replace(/\?/g, "")
-          .replace(/^\/+|\/+$/g, "");
-
-        if (simplePattern && normalizedPath.includes(simplePattern)) {
-          console.log(`Excluded by simple pattern ${simplePattern}: ${normalizedPath}`);
-          return true;
-        }
-      }
+    if (matchesGlobPattern(normalizedPath, pattern)) {
+      console.log(`Excluded by pattern "${pattern}": ${normalizedPath}`);
+      return true;
     }
   }
 
   return false;
+}
+
+/**
+ * Checks if a path matches a glob pattern
+ * Supports **, *, and ? wildcards
+ * @param path The file path to check
+ * @param pattern The glob pattern to match against
+ * @returns true if the path matches the pattern
+ */
+export function matchesGlobPattern(path: string, pattern: string): boolean {
+  // Normalize the pattern
+  let normalizedPattern = pattern.replace(/\\/g, "/");
+  
+  // Convert glob pattern to regex
+  let regexStr = normalizedPattern
+    .replace(/\./g, "\\.") // Escape dots
+    .replace(/\*\*/g, "§DOUBLESTAR§") // Temporarily mark **
+    .replace(/\*/g, "[^/]*") // * matches anything except /
+    .replace(/§DOUBLESTAR§/g, ".*") // ** matches anything including /
+    .replace(/\?/g, "[^/]"); // ? matches single character except /
+
+  // Handle pattern anchoring
+  if (normalizedPattern.startsWith("**/")) {
+    // Pattern like **/node_modules/** should match anywhere in path
+    regexStr = regexStr.substring(2); // Remove leading .*
+    // Match if pattern appears anywhere in path
+    regexStr = `(^|/)${regexStr}`;
+  } else if (!normalizedPattern.startsWith("/")) {
+    // Pattern without leading / should match from start
+    regexStr = "^" + regexStr;
+  }
+
+  // Handle pattern ending
+  if (normalizedPattern.endsWith("/**")) {
+    // Pattern ending with /** matches folder and all contents
+    // Already handled by .* at the end
+  } else if (!normalizedPattern.endsWith("*")) {
+    // Exact match required at end
+    regexStr = regexStr + "$";
+  }
+
+  try {
+    const regex = new RegExp(regexStr, "i");
+    return regex.test(path);
+  } catch (e) {
+    console.error(`Failed to create regex from pattern "${pattern}":`, e);
+    
+    // Fallback: simple substring match
+    const simplifiedPattern = normalizedPattern
+      .replace(/\*\*/g, "")
+      .replace(/\*/g, "")
+      .replace(/\?/g, "")
+      .replace(/^\/+|\/+$/g, "");
+    
+    if (simplifiedPattern) {
+      return path.toLowerCase().includes(simplifiedPattern.toLowerCase());
+    }
+    
+    return false;
+  }
 } 

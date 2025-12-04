@@ -87,6 +87,9 @@ export class Dependency extends vscode.TreeItem {
       } catch (err) {
         console.error("Failed to get package info for", this.resourceUri.fsPath, err);
       }
+      
+      // Set contextValue for manifest files to enable context menu
+      this.contextValue = "manifestFile";
     }
 
     // For manifest nodes we skip the update tooltip logic below

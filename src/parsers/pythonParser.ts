@@ -6,8 +6,8 @@ import { pathExists } from "../utils/fileUtils";
 
 /**
  * Parses a requirements.txt file and extracts all Python dependencies.
- * For each dependency, fetches the latest version from PyPI and
- * determines the update type.
+ * Creates dependency objects WITHOUT fetching latest versions for faster initial load.
+ * Versions will be fetched in the background by the DependencyProvider.
  *
  * @param requirementsTxtUri - URI of the requirements.txt file
  * @returns Promise resolving to array of dependencies
@@ -22,7 +22,7 @@ export async function getDepsInRequirementsTxt(
     const buffer = await vscode.workspace.fs.readFile(requirementsTxtUri);
     const content = Buffer.from(buffer).toString("utf8");
     const lines = content.split(/\r?\n/); // Split by newline, handling CRLF and LF
-    const depsPromises: Promise<Dependency | null>[] = [];
+    const deps: Dependency[] = [];
 
     for (const line of lines) {
       const trimmedLine = line.trim();
@@ -42,46 +42,21 @@ export async function getDepsInRequirementsTxt(
           // A more accurate comparison would require parsing the specifier.
           const currentVersion = match[2] ? match[2].trim() : "latest";
 
-          depsPromises.push(
-            (async () => {
-              const latestVersion = await fetchLatestPypiVersion(name);
-              if (latestVersion) {
-                // Note: currentVersion here is the *specifier*, not necessarily a fixed version.
-                // getUpdateType might not be accurate if currentVersion is a range.
-                // For a simple indicator, we compare against the latest available.
-                const updateType = getUpdateType(
-                  currentVersion,
-                  latestVersion
-                );
-                return new Dependency(
-                  name,
-                  currentVersion, // Show the original specifier
-                  vscode.TreeItemCollapsibleState.None,
-                  undefined,
-                  latestVersion,
-                  updateType,
-                  "pypi",
-                  requirementsTxtUri.fsPath
-                );
-              } else {
-                return new Dependency(
-                  name,
-                  currentVersion,
-                  vscode.TreeItemCollapsibleState.None,
-                  undefined,
-                  undefined,
-                  "none",
-                  "pypi",
-                  requirementsTxtUri.fsPath
-                );
-              }
-            })()
-          );
+          // Create dependency without fetching version (will be loaded in background)
+          deps.push(new Dependency(
+            name,
+            currentVersion, // Show the original specifier
+            vscode.TreeItemCollapsibleState.None,
+            undefined,
+            undefined, // latestVersion - will be loaded in background
+            "none", // updateType - will be determined when version is loaded
+            "pip",
+            requirementsTxtUri.fsPath
+          ));
         }
       }
     }
-    const resolvedDeps = await Promise.all(depsPromises);
-    return resolvedDeps.filter((d): d is Dependency => d !== null);
+    return deps;
   } catch (err: any) {
     console.error(
       `Error reading or parsing ${requirementsTxtUri.fsPath}:`,

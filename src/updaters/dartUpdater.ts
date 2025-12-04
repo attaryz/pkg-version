@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as yaml from "js-yaml";
 import { Dependency } from "../models/dependency";
-import { getExcludePattern } from "../utils/fileUtils";
+import { getExcludePatternForVSCode } from "../utils/fileUtils";
 
 /**
  * Updates a Dart/Flutter package in pubspec.yaml.
@@ -19,7 +19,7 @@ export async function updatePubDevPackage(dependency: Dependency): Promise<boole
 
   const pubspecFiles = await vscode.workspace.findFiles(
     "**/pubspec.yaml",
-    getExcludePattern()
+    getExcludePatternForVSCode()
   );
 
   if (pubspecFiles.length === 0) {

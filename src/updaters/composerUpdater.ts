@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { Dependency } from "../models/dependency";
-import { getExcludePattern } from "../utils/fileUtils";
+import { getExcludePatternForVSCode } from "../utils/fileUtils";
 import { isComposerAvailable, showComposerNotAvailableMessage } from "../utils/composerUtils";
 
 /**
@@ -32,7 +32,7 @@ export async function updateComposerPackage(
   // Similar to npm update, find composer.json and update it
   const composerJsonFiles = await vscode.workspace.findFiles(
     "**/composer.json",
-    getExcludePattern()
+    getExcludePatternForVSCode()
   );
 
   if (composerJsonFiles.length === 0) {

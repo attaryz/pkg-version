@@ -2,6 +2,102 @@
 
 All notable changes to the "pkg-version" extension will be documented in this file.
 
+## [3.0.0] - 2024-12-04
+
+### Major Performance Overhaul 🚀
+
+This is a major release focused on dramatically improving performance, reducing resource usage, and fixing critical issues with manifest scanning and dependency loading.
+
+#### Breaking Changes
+- Removed composer.lock and vendor directory as separate manifest file entries in the tree view
+- These are now used internally only, preventing 200+ unnecessary package checks
+- Changed default cache TTL from 30 minutes to 5 minutes for more accurate version information
+
+#### Fixed
+- **Critical**: Fixed composer.lock being incorrectly added as a manifest file, causing 200+ packages to be loaded
+- **Critical**: Fixed vendor directory appearing as a tree item and triggering full dependency scans
+- **Critical**: Fixed vendor directory scanning checking 250+ nested files instead of just top-level packages
+- **Critical**: Fixed node_modules and other excluded directories still being scanned
+- **Critical**: Fixed folder exclusion patterns not working correctly
+- Fixed update menu showing vendor files instead of only project manifest files
+- Fixed manifest scanning running too many times on startup
+- Fixed runtime checking happening multiple times unnecessarily
+- Fixed packages showing as up-to-date when they were actually outdated
+- Fixed duplicate dependency checks degrading performance
+
+#### Performance Improvements
+- Reduced cache TTL from 30 minutes to 5 minutes for better accuracy
+- Optimized background version loading (batch size increased from 5 to 10)
+- Added comprehensive dependency caching with `_dependencyCache` Map
+- Added manifest file caching with `_manifestFilesCache`
+- Implemented rate limiting system to prevent API throttling
+- Reduced vendor directory scans from 250+ files to 1-3 files
+- Made `getTreeItem()` dynamic to show loading indicators and update status in real-time
+- Cache now clears on manual refresh for immediate updates
+
+#### Added
+- New `rateLimiter.ts` utility for API rate limiting
+- New `getExcludePatternForVSCode()` helper function for consistent exclusion patterns
+- Added detailed logging throughout manifest scanning and dependency loading
+- Added support for Rust Cargo package manager
+- New `cargoParser.ts` and `cargoUpdater.ts` for Cargo.toml support
+
+#### Enhanced
+- Completely refactored manifest scanning logic in `ManifestScanner.ts`
+- Rewrote dependency loading in `DependencyLoader.ts` with lazy loading
+- Updated all 6 package updaters to use new exclusion patterns
+- Improved exclusion pattern handling with brace-expanded format `{pattern1,pattern2}`
+- Better error handling and user feedback throughout
+- Enhanced documentation with detailed fix summaries
+
+#### Technical Details
+- Fixed glob pattern format for VS Code's `findFiles` API
+- Vendor scanning now excludes nested packages with `**/vendor/*/**` pattern
+- Composer.lock and vendor are used internally but never shown as tree items
+- Background version loading now updates dependencies in batches for smoother UI
+- All registry fetchers now use rate limiting to prevent API errors
+
+## [2.9.0] - 2024-12-04
+
+### Performance & Caching Improvements
+
+#### Fixed
+- Fixed manifest scanning running multiple times on extension activation
+- Fixed excluded folders still being scanned for package files
+- Fixed duplicate dependency checks causing performance issues
+
+#### Performance Improvements
+- Implemented dependency caching system to avoid re-parsing files
+- Added manifest file caching to reduce filesystem operations
+- Optimized background version loading with larger batch sizes
+- Reduced unnecessary tree refreshes during version loading
+
+#### Enhanced
+- Improved cache management with proper invalidation on refresh
+- Better handling of excluded patterns in manifest scanning
+- More efficient file filtering logic
+
+## [2.8.0] - 2024-12-04
+
+### Vendor Directory & Exclusion Fixes
+
+#### Fixed
+- Fixed vendor directory scanning checking 250+ nested composer.json files
+- Fixed node_modules exclusion not working correctly
+- Fixed folder exclusion patterns not being applied properly
+- Fixed update menu showing all composer.json files including vendor packages
+
+#### Added
+- New exclusion pattern helper function `getExcludePatternForVSCode()`
+- Rate limiting system for API calls to prevent throttling
+- Better vendor directory handling with top-level-only scanning
+
+#### Enhanced
+- Updated all package updaters (Composer, npm, Python, Poetry, Dart) to use consistent exclusion patterns
+- Improved glob pattern format for better VS Code compatibility
+- Added `**/vendor/*/**` pattern to exclude nested vendor files while allowing top-level scanning
+- Better documentation of exclusion logic
+
 ## [2.5.2] - 2025-10-03
 
 ### Fixed

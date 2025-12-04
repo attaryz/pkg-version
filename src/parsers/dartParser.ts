@@ -7,8 +7,8 @@ import { pathExists } from "../utils/fileUtils";
 
 /**
  * Parses a pubspec.yaml file and extracts all Dart/Flutter dependencies.
- * For each dependency, fetches the latest version from Pub.dev and
- * determines the update type.
+ * Creates dependency objects WITHOUT fetching latest versions for faster initial load.
+ * Versions will be fetched in the background by the DependencyProvider.
  *
  * Handles various types of dependencies including:
  * - Version constraints (>=1.0.0 <2.0.0)
@@ -30,9 +30,9 @@ export async function getDepsInPubspecYaml(
     const buffer = await vscode.workspace.fs.readFile(pubspecYamlUri);
     const content = Buffer.from(buffer).toString("utf8");
     const pubspec = yaml.load(content) as any; // Use 'as any' for simplicity
-    let depsPromises: Promise<Dependency | null>[] = [];
+    let deps: Dependency[] = [];
 
-    const processPubspecDependencies = async (
+    const processPubspecDependencies = (
       dependencies: { [key: string]: any } | undefined,
       isDev: boolean
     ) => {
@@ -73,61 +73,26 @@ export async function getDepsInPubspecYaml(
           currentVersion = "unknown";
         }
 
-        // Only attempt to fetch updates for string versions
-        // and skip path/git dependencies
-        const canCheckForUpdates =
-          typeof depValue === "string" &&
-          !currentVersion.startsWith("path:") &&
-          !currentVersion.startsWith("git:") &&
-          !currentVersion.startsWith("hosted:");
-
-        depsPromises.push(
-          (async () => {
-            let latestVersion: string | undefined = undefined;
-
-            if (canCheckForUpdates) {
-              latestVersion = await fetchLatestPubDevVersion(packageName);
-            }
-
-            if (latestVersion) {
-              const updateType = getUpdateType(currentVersion, latestVersion);
-              return new Dependency(
-                packageName,
-                currentVersion,
-                vscode.TreeItemCollapsibleState.None,
-                undefined,
-                latestVersion,
-                updateType,
-                "dart",
-                pubspecYamlUri.fsPath,
-                isDev
-              );
-            } else {
-              return new Dependency(
-                packageName,
-                currentVersion,
-                vscode.TreeItemCollapsibleState.None,
-                undefined,
-                undefined,
-                "none",
-                "dart",
-                pubspecYamlUri.fsPath,
-                isDev
-              );
-            }
-          })()
-        );
+        // Create dependency without fetching version (will be loaded in background)
+        deps.push(new Dependency(
+          packageName,
+          currentVersion,
+          vscode.TreeItemCollapsibleState.None,
+          undefined,
+          undefined, // latestVersion - will be loaded in background
+          "none", // updateType - will be determined when version is loaded
+          "pub",
+          pubspecYamlUri.fsPath,
+          isDev
+        ));
       }
     };
 
     // Process regular and dev dependencies
-    await processPubspecDependencies(pubspec.dependencies, false);
-    await processPubspecDependencies(pubspec.dev_dependencies, true);
+    processPubspecDependencies(pubspec.dependencies, false);
+    processPubspecDependencies(pubspec.dev_dependencies, true);
 
-    const resolvedDeps = await Promise.all(depsPromises);
-    return resolvedDeps.filter(
-      (d): d is Dependency => d !== null
-    );
+    return deps;
   } catch (err: any) {
     console.error(`Error reading or parsing ${pubspecYamlUri.fsPath}:`, err);
     // Check if it's a YAMLException for a more specific message

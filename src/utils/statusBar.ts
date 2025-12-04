@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 import { DependencyProvider } from "../dependencyProvider";
 
 let dependencyStatusBarItem: vscode.StatusBarItem;
+let updateTimeout: NodeJS.Timeout | undefined;
+let isUpdating = false;
 
 /**
  * Initialize the status bar item
@@ -23,13 +25,30 @@ export function initializeStatusBar(context: vscode.ExtensionContext): vscode.St
 /**
  * Updates the unified status bar item displaying dependency statistics.
  * Shows vulnerability count and package update information.
+ * Only counts already-loaded dependencies, does NOT trigger version fetching.
+ * Debounced to prevent excessive updates.
  * 
  * @param provider The dependency provider to get dependency information from
  */
 export async function updateDependencyStatusCounter(provider: DependencyProvider): Promise<void> {
-  try {
-    const outdatedDeps = await provider.getAllOutdatedDependencies();
-    const allDeps = await provider.getAllDependencies();
+  // Debounce: clear existing timeout and set a new one
+  if (updateTimeout) {
+    clearTimeout(updateTimeout);
+  }
+
+  // If already updating, skip this call
+  if (isUpdating) {
+    console.log("[StatusBar] Update already in progress, skipping...");
+    return;
+  }
+
+  updateTimeout = setTimeout(async () => {
+    try {
+      isUpdating = true;
+      console.log("[StatusBar] Updating status bar...");
+
+      // Get all dependencies that are already loaded (no version fetching)
+      const allDeps = await provider.getAllDependencies();
     
     const updateCounts = {
       major: 0,
@@ -38,18 +57,19 @@ export async function updateDependencyStatusCounter(provider: DependencyProvider
       deprecated: 0
     };
 
-    outdatedDeps.forEach(dep => {
-      if (dep.updateType === "major") {
-        updateCounts.major++;
-      } else if (dep.updateType === "minor") {
-        updateCounts.minor++;
-      } else if (dep.updateType === "patch") {
-        updateCounts.patch++;
-      }
-    });
-
-    // Count deprecated packages from all dependencies
+    // Count updates and deprecated packages from already-loaded data
     allDeps.forEach(dep => {
+      // Only count if we have version info (already loaded)
+      if (dep.latestVersion && dep.updateType && dep.updateType !== "none") {
+        if (dep.updateType === "major") {
+          updateCounts.major++;
+        } else if (dep.updateType === "minor") {
+          updateCounts.minor++;
+        } else if (dep.updateType === "patch") {
+          updateCounts.patch++;
+        }
+      }
+      
       if (dep.deprecated) {
         updateCounts.deprecated++;
       }
@@ -117,11 +137,15 @@ export async function updateDependencyStatusCounter(provider: DependencyProvider
       }
     }
     
-    dependencyStatusBarItem.show();
+      dependencyStatusBarItem.show();
+      console.log("[StatusBar] Status bar updated successfully");
 
-  } catch (error) {
-    console.error("Failed to update dependency status counter:", error);
-    dependencyStatusBarItem.text = "$(package) Error";
-    dependencyStatusBarItem.tooltip = "Failed to load dependency information";
-  }
+    } catch (error) {
+      console.error("[StatusBar] Failed to update dependency status counter:", error);
+      dependencyStatusBarItem.text = "$(package) Error";
+      dependencyStatusBarItem.tooltip = "Failed to load dependency information";
+    } finally {
+      isUpdating = false;
+    }
+  }, 500); // 500ms debounce delay
 }

@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { Dependency } from "../models/dependency";
-import { getExcludePattern } from "../utils/fileUtils";
+import { getExcludePatternForVSCode } from "../utils/fileUtils";
 
 /**
  * Updates a Poetry package in pyproject.toml.
@@ -18,7 +18,7 @@ export async function updatePoetryPackage(dependency: Dependency): Promise<boole
 
   const pyprojectFiles = await vscode.workspace.findFiles(
     "**/pyproject.toml",
-    getExcludePattern()
+    getExcludePatternForVSCode()
   );
 
   if (pyprojectFiles.length === 0) {
@@ -183,7 +183,7 @@ function preserveVersionConstraintStyle(currentVersion: string, latestVersion: s
 export async function removePoetryPackage(dependency: Dependency): Promise<boolean> {
   const pyprojectFiles = await vscode.workspace.findFiles(
     "**/pyproject.toml",
-    getExcludePattern()
+    getExcludePatternForVSCode()
   );
 
   if (pyprojectFiles.length === 0) {

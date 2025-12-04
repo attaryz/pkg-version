@@ -6,8 +6,8 @@ import { pathExists } from "../utils/fileUtils";
 
 /**
  * Parses a package.json file and extracts all dependencies with their versions.
- * For each dependency, fetches the latest version from npm registry and
- * determines the update type.
+ * Creates dependency objects WITHOUT fetching latest versions for faster initial load.
+ * Versions will be fetched in the background by the DependencyProvider.
  *
  * @param packageJsonUri - URI of the package.json file
  * @returns Promise resolving to array of dependencies
@@ -23,9 +23,9 @@ export async function getDepsInPackageJson(
     const buffer = await vscode.workspace.fs.readFile(packageJsonUri);
     const content = Buffer.from(buffer).toString("utf8");
     const json = JSON.parse(content);
-    let depsPromises: Promise<Dependency | null>[] = []; // Store promises
+    let deps: Dependency[] = [];
 
-    const processDependencies = async (
+    const processDependencies = (
       dependencies: { [key: string]: string } | undefined,
       isDev: boolean
     ) => {
@@ -33,54 +33,28 @@ export async function getDepsInPackageJson(
 
       for (const moduleName of Object.keys(dependencies)) {
         const currentVersion = dependencies[moduleName];
-        // Push the promise for creating the dependency
-        depsPromises.push(
-          (async () => {
-            const result = await fetchLatestNpmVersion(moduleName);
-            if (result && result.version) {
-              const updateType = getUpdateType(currentVersion, result.version);
-              return new Dependency(
-                moduleName,
-                currentVersion,
-                vscode.TreeItemCollapsibleState.None,
-                undefined, // No resourceUri for individual deps
-                result.version,
-                updateType,
-                "npm",
-                packageJsonUri.fsPath,
-                isDev,
-                undefined, // vulnerabilities
-                result.deprecated // deprecated flag
-              );
-            } else {
-              // If fetch failed, create dependency without update info
-              return new Dependency(
-                moduleName,
-                currentVersion,
-                vscode.TreeItemCollapsibleState.None,
-                undefined,
-                undefined,
-                "none",
-                "npm",
-                packageJsonUri.fsPath,
-                isDev,
-                undefined, // vulnerabilities
-                false // not deprecated if we can't fetch info
-              );
-            }
-          })()
-        );
+        // Create dependency without fetching version (will be loaded in background)
+        deps.push(new Dependency(
+          moduleName,
+          currentVersion,
+          vscode.TreeItemCollapsibleState.None,
+          undefined, // No resourceUri for individual deps
+          undefined, // latestVersion - will be loaded in background
+          "none", // updateType - will be determined when version is loaded
+          "npm",
+          packageJsonUri.fsPath,
+          isDev,
+          undefined, // vulnerabilities
+          false // deprecated - will be determined when version is loaded
+        ));
       }
     };
 
-    await processDependencies(json.dependencies, false);
-    await processDependencies(json.devDependencies, true);
+    processDependencies(json.dependencies, false);
+    processDependencies(json.devDependencies, true);
     // TODO: Add support for other dependency types (peerDependencies, optionalDependencies)
 
-    // Wait for all dependency fetch/creation promises to resolve
-    const resolvedDeps = await Promise.all(depsPromises);
-    // Filter out any null results (though currently not returning null)
-    return resolvedDeps.filter((d): d is Dependency => d !== null);
+    return deps;
   } catch (err: any) {
     console.error(`Error reading or parsing ${packageJsonUri.fsPath}:`, err);
     vscode.window.showErrorMessage(

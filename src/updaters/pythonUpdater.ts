@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { Dependency } from "../models/dependency";
-import { getExcludePattern } from "../utils/fileUtils";
+import { getExcludePatternForVSCode } from "../utils/fileUtils";
 
 /**
  * Updates a Python package in requirements.txt.
@@ -18,7 +18,7 @@ export async function updatePypiPackage(dependency: Dependency): Promise<boolean
 
   const requirementsFiles = await vscode.workspace.findFiles(
     "**/requirements.txt",
-    getExcludePattern()
+    getExcludePatternForVSCode()
   );
 
   if (requirementsFiles.length === 0) {

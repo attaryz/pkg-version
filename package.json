@@ -2,7 +2,7 @@
   "name": "pkg-version",
   "displayName": "Package Version Checker",
   "description": "Checks package versions in common manifest files (package.json, composer.json, requirements.txt, pyproject.toml, pubspec.yaml) for updates.",
-  "version": "2.7.2",
+  "version": "3.0.0",
   "publisher": "Abdullah-Dev",
   "repository": {
     "type": "git",
@@ -52,6 +52,11 @@
         "command": "pkg-version.manageExclusions",
         "title": "Manage Exclusions",
         "icon": "$(gear)"
+      },
+      {
+        "command": "pkg-version.removeFromExcludeList",
+        "title": "Remove from Exclude List",
+        "icon": "$(add)"
       },
       {
         "command": "pkg-version.updatePackage",
@@ -211,6 +216,11 @@
           "command": "pkg-version.scanManifestVulnerabilities",
           "when": "view == packageDependencies && viewItem == manifestFile",
           "group": "2_security"
+        },
+        {
+          "command": "pkg-version.removeFromExcludeList",
+          "when": "view == packageDependencies && viewItem == excludedManifest",
+          "group": "1_exclusion"
         }
       ],
       "explorer/context": [
@@ -267,7 +277,7 @@
             "**/bin/**",
             "**/__pycache__/**"
           ],
-          "description": "Glob patterns for folders to exclude when searching for package files. Note: The vendor folder will still be accessible directly for Composer package scanning."
+          "description": "Glob patterns for folders to exclude when searching for package files. Note: When 'scanVendorDirectory' is enabled, only the top-level vendor directory is scanned, not nested packages."
         },
         "pkgVersion.scanVendorDirectory": {
           "type": "boolean",
@@ -280,11 +290,9 @@
           "enum": [
             "auto",
             "composer.json",
-            "composer.lock",
-            "vendor",
-            "all"
+            "vendor"
           ],
-          "description": "How to detect Composer packages: 'auto' (try all methods), 'composer.json' (only from composer.json), 'composer.lock' (only from composer.lock), 'vendor' (only from vendor dir), or 'all' (use all methods)."
+          "description": "How to detect Composer packages: 'auto' (recommended - uses composer.json and vendor scanning), 'composer.json' (only from composer.json), or 'vendor' (only from vendor directory)."
         },
         "pkgVersion.useOSVProvider": {
           "type": "boolean",

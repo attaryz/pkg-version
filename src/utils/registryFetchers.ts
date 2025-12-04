@@ -2,6 +2,7 @@ import axios from "axios";
 import * as semver from "semver";
 import { getUpdateCache } from "./updateCache";
 import { REGISTRY_URLS, API_TIMEOUTS } from "../config/registryUrls";
+import { getRateLimiter } from "./rateLimiter";
 
 /**
  * Fetches the latest version of a package from npm registry.
@@ -26,6 +27,9 @@ export async function fetchLatestNpmVersion(
   }
 
   try {
+    // Rate limiting
+    await getRateLimiter('npm').acquire();
+    
     // Use a public registry URL
     const response = await axios.get(
       REGISTRY_URLS.npm.latest(packageName),
@@ -55,6 +59,72 @@ export async function fetchLatestNpmVersion(
       );
     }
     // Don't show error message to user for individual package fetch failures
+  }
+  return undefined;
+}
+
+/**
+ * Fetches the latest version of a package from the crates.io (Rust/Cargo) registry.
+ * Uses the crates.io API to get package information.
+ * Uses caching to reduce API calls when currentVersion is provided.
+ *
+ * @param packageName - The name of the Rust crate
+ * @param currentVersion - Optional current version for cache key and update cache
+ * @returns The latest version string or undefined if fetching fails
+ */
+export async function fetchLatestCratesVersion(
+  packageName: string,
+  currentVersion?: string
+): Promise<string | undefined> {
+  // Check cache first
+  if (currentVersion) {
+    const cache = getUpdateCache();
+    const cached = cache.get(packageName, currentVersion, "cargo");
+    if (cached) {
+      return cached.latestVersion;
+    }
+  }
+
+  try {
+    // Rate limiting
+    await getRateLimiter('crates').acquire();
+    
+    const response = await axios.get(
+      REGISTRY_URLS.crates.package(packageName)
+    );
+
+    // Prefer crate.max_version if present; fallback to versions array
+    const latestVersion: string | undefined =
+      response?.data?.crate?.max_version ||
+      response?.data?.crate?.newest_version ||
+      (Array.isArray(response?.data?.versions)
+        ? response.data.versions
+            .map((v: any) => v?.num)
+            .filter((v: string | undefined) => !!v)
+            .sort((a: string, b: string) => {
+              const av = semver.valid(semver.coerce(a)) || "0.0.0";
+              const bv = semver.valid(semver.coerce(b)) || "0.0.0";
+              return semver.rcompare(av, bv);
+            })[0]
+        : undefined);
+
+    if (latestVersion) {
+      if (currentVersion) {
+        const cache = getUpdateCache();
+        const updateType = getUpdateType(currentVersion, latestVersion);
+        cache.set(packageName, currentVersion, "cargo", latestVersion, updateType);
+      }
+      return latestVersion;
+    }
+  } catch (error: any) {
+    if (error.response && error.response.status === 404) {
+      console.warn(`Crate ${packageName} not found on crates.io.`);
+    } else {
+      console.error(
+        `Failed to fetch latest version for ${packageName} from crates.io:`,
+        error.message
+      );
+    }
   }
   return undefined;
 }
@@ -114,6 +184,9 @@ export async function fetchLatestPackagistVersion(
   console.log(`Fetching latest version for ${cleanPackageName} from Packagist`);
 
   try {
+    // Rate limiting
+    await getRateLimiter('packagist').acquire();
+    
     // Use the Packagist API v2
     const response = await axios.get(
       REGISTRY_URLS.packagist.package(cleanPackageName),
@@ -243,6 +316,9 @@ export async function fetchLatestPypiVersion(
   packageName: string
 ): Promise<string | undefined> {
   try {
+    // Rate limiting
+    await getRateLimiter('pypi').acquire();
+    
     // PyPI JSON API endpoint
     const response = await axios.get(
       `https://pypi.org/pypi/${packageName}/json`
@@ -274,6 +350,9 @@ export async function fetchLatestPubDevVersion(
   packageName: string
 ): Promise<string | undefined> {
   try {
+    // Rate limiting
+    await getRateLimiter('pub').acquire();
+    
     // Pub.dev API endpoint
     const response = await axios.get(
       `https://pub.dev/api/packages/${packageName}`
@@ -292,4 +371,19 @@ export async function fetchLatestPubDevVersion(
     }
   }
   return undefined;
+}
+
+/**
+ * Fetches the latest version of a package from the Cargo (Rust) registry.
+ * Alias for fetchLatestCratesVersion for consistency.
+ *
+ * @param packageName - The name of the Rust crate
+ * @param currentVersion - Optional current version for cache key
+ * @returns The latest version string or undefined if fetching fails
+ */
+export async function fetchLatestCargoVersion(
+  packageName: string,
+  currentVersion?: string
+): Promise<string | undefined> {
+  return fetchLatestCratesVersion(packageName, currentVersion);
 } 

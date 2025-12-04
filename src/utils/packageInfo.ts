@@ -128,6 +128,28 @@ function getPoetryVersion(): string {
 }
 
 /**
+ * Gets the installed Rust toolchain version (rustc)
+ */
+function getRustVersion(): string {
+  try {
+    return execSync('rustc --version').toString().match(/rustc\s+(\d+\.\d+\.\d+)/)?.[1] || "Rust";
+  } catch (err) {
+    return "Rust";
+  }
+}
+
+/**
+ * Gets the installed Cargo version
+ */
+function getCargoVersion(): string {
+  try {
+    return execSync('cargo --version').toString().match(/cargo\s+(\d+\.\d+\.\d+)/)?.[1] || "";
+  } catch (err) {
+    return "";
+  }
+}
+
+/**
  * Get logo URI for a package manager
  * 
  * @param packageManager The package manager name
@@ -310,6 +332,16 @@ export function getPackageInfo(manifestPath: string): PackageInfo | undefined {
         runtime: getDartVersion(),
         logoPath: getLogoUri("pub"),
         ...additionalInfo
+      };
+    }
+
+    if (fileName === "Cargo.toml") {
+      return {
+        packageManager: "cargo",
+        packageManagerVersion: getCargoVersion(),
+        language: "Rust",
+        runtime: getRustVersion(),
+        logoPath: getLogoUri("cargo")
       };
     }
 

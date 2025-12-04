@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { Dependency } from "../models/dependency";
-import { getExcludePattern } from "../utils/fileUtils";
+import { getExcludePatternForVSCode } from "../utils/fileUtils";
 
 /**
  * Updates an npm package in package.json.
@@ -20,7 +20,7 @@ export async function updateNpmPackage(dependency: Dependency): Promise<boolean>
     // Find the package.json from workspace
     const packageJsonFiles = await vscode.workspace.findFiles(
       "**/package.json",
-      getExcludePattern()
+      getExcludePatternForVSCode()
     );
 
     if (packageJsonFiles.length === 0) {
